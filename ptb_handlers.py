@@ -123,12 +123,30 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 btns.append(InlineKeyboardButton(f"{t['name']}", callback_data=f"talent_{tid}"))
         buttons = [btns[i:i+2] for i in range(0, len(btns), 2)]
 
-        # Get welcome template
+        # Delete loading message
+        try:
+            await loading.delete()
+        except Exception:
+            pass
+
+        # Send welcome via rich message (send_template)
+        from rich_message import send_template
+        from bot_manager import bot
+
         template = await db.get_template("welcome")
         clean = re.sub(r'<[^>]+>', '', template).strip() if template else ""
-        text = clean if clean else "ㅤ"
 
-        await loading.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+        # Build markup as dict
+        markup_rows = []
+        for row in buttons:
+            markup_rows.append([{"text": b.text, "callback_data": b.callback_data} for b in row])
+        markup_dict = {"inline_keyboard": markup_rows}
+
+        if clean:
+            await send_template(bot, chat_id, template, markup=markup_dict)
+        else:
+            # Template kosong — kirim tombol saja
+            await bot.send_message(chat_id, "ㅤ", reply_markup=markup_dict)
 
 
 # ============================================================
