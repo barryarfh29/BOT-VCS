@@ -15,23 +15,25 @@ logger = logging.getLogger(__name__)
 
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Timeout toleran: beri kesempatan connect lambat sebelum fallback
-HTTP_TIMEOUT = aiohttp.ClientTimeout(total=15, connect=6)
+# Timeout cepat: kalau rich message tidak respond dalam 3 detik, langsung fallback
+HTTP_TIMEOUT = aiohttp.ClientTimeout(total=3, connect=2)
 
-# Circuit breaker: setelah gagal connect, skip rich message selama periode ini
-# supaya customer tidak ikut menunggu timeout berulang-ulang
-FAIL_COOLDOWN = 30  # detik
+# Circuit breaker: setelah gagal, skip rich message selama periode ini
+RICH_MESSAGE_ENABLED = True
+FAIL_COOLDOWN = 10  # detik — cooldown pendek, coba lagi cepat
 _last_fail_ts = 0.0
 
-# Retry: coba ulang sekali sebelum menyerah ke fallback
-MAX_ATTEMPTS = 2
+MAX_ATTEMPTS = 1  # Satu kali coba, langsung fallback kalau gagal
 
 
 async def _post_rich(payload: dict, label: str) -> dict:
-    """POST ke sendRichMessage: paksa IPv4 + retry, return {} kalau gagal (caller fallback)."""
+    """POST ke sendRichMessage: timeout cepat, 1 attempt, fallback instant."""
     global _last_fail_ts
 
-    # Baru saja gagal? Langsung fallback tanpa menunggu timeout lagi
+    if not RICH_MESSAGE_ENABLED:
+        return {}
+
+    # Baru saja gagal? Langsung fallback
     if time.time() - _last_fail_ts < FAIL_COOLDOWN:
         return {}
 
