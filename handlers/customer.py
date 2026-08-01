@@ -173,10 +173,14 @@ def register_customer_handlers():
             )
         else:
             # Animasi loading sebelum welcome (template dari database, editable via web)
+            import re
+            def _strip_html(text):
+                return re.sub(r'<[^>]+>', '', text).strip()
+
             talents_count = len(await db.get_talents())
-            tpl1 = (await db.get_template("loading_1")).replace("{count}", str(talents_count))
-            tpl2 = (await db.get_template("loading_2")).replace("{count}", str(talents_count))
-            tpl3 = (await db.get_template("loading_3")).replace("{count}", str(talents_count))
+            tpl1 = _strip_html((await db.get_template("loading_1")).replace("{count}", str(talents_count)))
+            tpl2 = _strip_html((await db.get_template("loading_2")).replace("{count}", str(talents_count)))
+            tpl3 = _strip_html((await db.get_template("loading_3")).replace("{count}", str(talents_count)))
 
             loading_msg = await bot.send_message(message.chat.id, tpl1)
             await asyncio.sleep(0.8)
