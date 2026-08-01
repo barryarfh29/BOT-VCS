@@ -590,18 +590,18 @@ async def upload_talent_video(request):
         if probe_video_codec(raw_path) == "h264":
             compressed_path = raw_path
         else:
-            # Kompres dengan FFmpeg (1080p, 2.5Mbps, audio 128k)
+            # Kompres dengan FFmpeg (720p, ultrafast, CRF 28)
             import subprocess
             cmd = [
                 "ffmpeg", "-y", "-i", raw_path,
-                "-c:v", "libx264", "-preset", "veryfast",
-                "-b:v", "2500k", "-maxrate", "3000k", "-bufsize", "6000k",
-                "-vf", "scale=-2:1080",
+                "-c:v", "libx264", "-preset", "ultrafast",
+                "-crf", "28",
+                "-vf", "scale=-2:'min(ih,720)'",
                 "-c:a", "aac", "-b:a", "128k",
                 "-movflags", "+faststart",
                 compressed_path
             ]
-            proc = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, timeout=600)
+            proc = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, timeout=300)
             if proc.returncode != 0 or not os.path.isfile(compressed_path):
                 compressed_path = raw_path  # fallback: pakai file asli
 
