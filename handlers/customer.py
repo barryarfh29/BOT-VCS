@@ -74,6 +74,7 @@ async def send_welcome_menu(client, chat_id):
     """
     talents = await db.get_talents()
     if not talents:
+        logger.info(f"send_welcome_menu: no talents found")
         return None
     btns = []
     for t in talents:
@@ -98,6 +99,7 @@ async def send_welcome_menu(client, chat_id):
         await db.get_template("welcome"),
         markup=InlineKeyboardMarkup(buttons),
     )
+    logger.info(f"send_welcome_menu: sent to {chat_id}, msg_id={welcome_id}, talents={len(talents)}")
     await track_ui(chat_id, welcome_id)
     return welcome_id
 
