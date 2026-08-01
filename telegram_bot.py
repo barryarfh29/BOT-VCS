@@ -406,28 +406,49 @@ class BotClient:
     async def dispatch_update(self, update: dict):
         """Route update to registered handlers."""
         if "message" in update:
-            msg = MessageObj(update["message"], self)
-            matched = False
-            for i, (filt, handler) in enumerate(self._handlers_message):
-                if filt is None or self._match_filter(filt, msg, update["message"]):
+            try:
+                msg = MessageObj(update["message"], self)
+            except Exception as e:
+                print(f"[MSG PARSE ERROR] {e} | keys={list(update['message'].keys())}")
+                import traceback; traceback.print_exc()
+                return
+
+            for filt, handler in self._handlers_message:
+                try:
+                    matched = (filt is None) or self._match_filter(filt, msg, update["message"])
+                except Exception as e:
+                    print(f"[FILTER ERROR] {e} | filter={type(filt).__name__}")
+                    continue
+                if matched:
                     try:
                         await handler(self, msg)
                     except Exception as e:
-                        logger.error(f"Handler error: {e}", exc_info=True)
-                    matched = True
+                        print(f"[HANDLER ERROR] {e}")
+                        import traceback; traceback.print_exc()
                     return
-            # No handler matched
+            # No match
             keys = [k for k in update['message'].keys() if k not in ('from', 'chat', 'date', 'message_id')]
-            logger.info(f"No handler match: keys={keys}, chat_type={update['message'].get('chat',{}).get('type')}")
+            print(f"[NO MATCH] keys={keys}, type={update['message'].get('chat',{}).get('type')}")
 
         elif "callback_query" in update:
-            cb = CallbackQueryObj(update["callback_query"], self)
+            try:
+                cb = CallbackQueryObj(update["callback_query"], self)
+            except Exception as e:
+                print(f"[CB PARSE ERROR] {e}")
+                return
+
             for filt, handler in self._handlers_callback:
-                if filt is None or self._match_cb_filter(filt, cb):
+                try:
+                    matched = (filt is None) or self._match_cb_filter(filt, cb)
+                except Exception as e:
+                    print(f"[CB FILTER ERROR] {e}")
+                    continue
+                if matched:
                     try:
                         await handler(self, cb)
                     except Exception as e:
-                        logger.error(f"Callback handler error: {e}", exc_info=True)
+                        print(f"[CB HANDLER ERROR] {e}")
+                        import traceback; traceback.print_exc()
                     return
 
     def _match_filter(self, filt, msg: 'MessageObj', raw: dict) -> bool:

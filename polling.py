@@ -4,6 +4,7 @@ HTTP Long-Polling — reliable getUpdates via aiohttp.
 
 import asyncio
 import logging
+import traceback
 import aiohttp
 
 from config import BOT_TOKEN
@@ -15,7 +16,7 @@ POLL_TIMEOUT = 30
 
 
 async def start_polling(bot_client):
-    """Long-polling loop. Dispatch updates ke bot_client.dispatch_update()."""
+    """Long-polling loop."""
     offset = 0
     retry_delay = 1
     logger.info("HTTP polling started")
@@ -29,7 +30,6 @@ async def start_polling(bot_client):
 
                 if not data.get("ok"):
                     code = data.get("error_code", 0)
-                    # 409 = container lama masih hidup sementara, self-resolving — jangan spam log
                     if code == 409:
                         await asyncio.sleep(3)
                         continue
@@ -43,10 +43,13 @@ async def start_polling(bot_client):
 
                 for update in updates:
                     offset = update["update_id"] + 1
+                    # Dispatch with FULL error visibility
                     try:
                         await bot_client.dispatch_update(update)
                     except Exception as e:
-                        logger.error(f"Handler error: {e}", exc_info=True)
+                        # Print to stdout so it ALWAYS shows in EasyPanel logs
+                        print(f"[DISPATCH ERROR] {e}")
+                        traceback.print_exc()
 
             except asyncio.CancelledError:
                 break
