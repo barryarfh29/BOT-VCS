@@ -161,7 +161,7 @@ async def start_default_userbot():
 
     try:
         userbot = Client("default_userbot", api_id=API_ID, api_hash=API_HASH,
-                         session_string=session_string, no_updates=True, workdir="/tmp")
+                         session_string=session_string)
         await userbot.start()
         call = PyTgCalls(userbot)
         await call.start()
@@ -180,7 +180,7 @@ async def start_talent_bot(talent_id: str, session_string: str):
     """Start a talent-specific userbot with pytgcalls."""
     try:
         c = Client(f"talent_{talent_id}", api_id=API_ID, api_hash=API_HASH,
-                   session_string=session_string, no_updates=True, workdir="/tmp")
+                   session_string=session_string)
         await c.start()
         tc = PyTgCalls(c)
         await tc.start()
