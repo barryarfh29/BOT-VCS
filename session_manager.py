@@ -46,7 +46,7 @@ def get_video_list():
 
 async def start_session(user_id: int, invoice_id: str, chat_id: int, talent: dict):
     """Create channel, send invite. Timer starts when user joins."""
-    duration = talent["duration"]
+    duration = float(talent.get("duration", 0) or 0)
     talent_name = talent["name"]
     talent_id = talent.get("id")
 
@@ -361,8 +361,9 @@ async def end_session(session: dict):
     # Set cooldown if talent has one
     if talent_id:
         talent = await db.get_talent(talent_id)
-        if talent and talent.get("cooldown", 0) > 0:
-            await db.set_cooldown(talent_id, time.time() + talent["cooldown"] * 60)
+        cd = float(talent.get("cooldown", 0) or 0) if talent else 0
+        if cd > 0:
+            await db.set_cooldown(talent_id, time.time() + cd * 60)
 
     # Hapus pesan "Pembayaran berhasil + link"
     success_msg_id = session.get("success_msg_id")
@@ -527,7 +528,7 @@ async def notify_after_cooldown(talent_id: str):
     talent = await db.get_talent(talent_id)
     if not talent:
         return
-    cd = talent.get("cooldown", 0)
+    cd = float(talent.get("cooldown", 0) or 0)
     if cd > 0:
         await asyncio.sleep(cd * 60)
     await db.remove_cooldown(talent_id)

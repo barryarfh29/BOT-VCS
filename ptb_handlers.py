@@ -771,15 +771,44 @@ async def _poll_payment(context, user_id, invoice_id, chat_id, talent, msg_ids):
                             await context.bot.delete_message(chat_id, mid)
                         except Exception:
                             pass
-                # Proceed to session
+
+                # Step 1: Minta bukti pembayaran (template "paid" + Skip button)
                 from rich_message import send_template
                 from bot_manager import bot as bot_wrapper
-                tpl_connecting = await db.get_template("connecting")
-                connecting_id = await send_template(bot_wrapper, chat_id, tpl_connecting, talent_name=talent["name"])
-                await asyncio.sleep(3)
-                if connecting_id:
+                tpl_paid = await db.get_template("paid")
+                paid_markup = {"inline_keyboard": [[{"text": "Skip", "callback_data": f"skip_bukti_{invoice_id}"}]]}
+                msg1_id = await send_template(bot_wrapper, chat_id, tpl_paid, markup=paid_markup)
+
+                # Simpan state untuk handler foto bukti
+                admin_state[f"bukti_{user_id}"] = {
+                    "invoice_id": invoice_id,
+                    "talent": talent,
+                    "chat_id": chat_id,
+                    "msg1_id": msg1_id,
+                }
+
+                # Tunggu 60 detik — kalau belum kirim bukti, lanjut otomatis
+                await asyncio.sleep(60)
+
+                # Cek apakah sudah diproses (oleh handler foto atau tombol skip)
+                if f"bukti_{user_id}" not in admin_state:
+                    return  # Sudah diproses
+
+                # Belum kirim bukti, lanjut otomatis
+                del admin_state[f"bukti_{user_id}"]
+                if msg1_id:
                     try:
-                        await context.bot.delete_message(chat_id, connecting_id)
+                        await context.bot.delete_message(chat_id, msg1_id)
+                    except Exception:
+                        pass
+
+                # Step 2: Connecting + start session
+                tpl_conn = await db.get_template("connecting")
+                conn_id = await send_template(bot_wrapper, chat_id, tpl_conn, talent_name=talent["name"])
+                await asyncio.sleep(3)
+                if conn_id:
+                    try:
+                        await context.bot.delete_message(chat_id, conn_id)
                     except Exception:
                         pass
                 await start_session(user_id, invoice_id, chat_id, talent)
@@ -832,10 +861,36 @@ async def _handle_refresh_session(update, context):
 
 async def _handle_skip_bukti(update, context, data):
     query = update.callback_query
+    uid = query.from_user.id
+
+    key = f"bukti_{uid}"
+    if key not in admin_state:
+        await query.answer()
+        return
+
+    state = admin_state[key]
+    del admin_state[key]
+
     try:
         await query.message.delete()
     except Exception:
         pass
+
+    # Proceed to connecting + session
+    from rich_message import send_template
+    from bot_manager import bot as bot_wrapper
+    from session_manager import start_session
+
+    tpl_conn = await db.get_template("connecting")
+    conn_id = await send_template(bot_wrapper, state["chat_id"], tpl_conn, talent_name=state["talent"]["name"])
+    await asyncio.sleep(3)
+    if conn_id:
+        try:
+            await context.bot.delete_message(state["chat_id"], conn_id)
+        except Exception:
+            pass
+    await start_session(uid, state["invoice_id"], state["chat_id"], state["talent"])
+    await query.answer()
 
 
 # ============================================================
