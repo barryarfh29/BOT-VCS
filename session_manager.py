@@ -199,7 +199,12 @@ async def wait_for_join(session: dict):
             video_path = os.path.join(VIDEO_FOLDER, filename)
             if video_data.get("file_id") and not os.path.isfile(video_path):
                 try:
-                    await bot.download_media(video_data["file_id"], file_name=video_path)
+                    # Pakai userbot untuk download (support file besar sampai 2GB)
+                    t_userbot, _ = await get_talent_bot(talent_id)
+                    if t_userbot:
+                        await t_userbot.download_media(video_data["file_id"], file_name=video_path)
+                    else:
+                        await bot.download_media(video_data["file_id"], file_name=video_path)
                 except Exception as e:
                     logger.error(f"Download video failed: {e}")
         elif isinstance(video_data, str):
@@ -440,7 +445,11 @@ async def delayed_play(session: dict):
         video_path = os.path.join(VIDEO_FOLDER, filename)
         if video_data.get("file_id") and not os.path.isfile(video_path):
             try:
-                await bot.download_media(video_data["file_id"], file_name=video_path)
+                # Pakai userbot untuk download file besar
+                if t_userbot:
+                    await t_userbot.download_media(video_data["file_id"], file_name=video_path)
+                else:
+                    await bot.download_media(video_data["file_id"], file_name=video_path)
             except Exception as e:
                 logger.error(f"Download video failed: {e}")
                 return
