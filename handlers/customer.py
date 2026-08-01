@@ -84,6 +84,7 @@ async def send_welcome_menu(client, chat_id):
     """Kirim menu awal (daftar talent) + lacak untuk dibersihkan saat navigasi.
 
     Returns message_id atau None kalau tidak ada talent.
+    Template welcome opsional — kalau kosong, kirim tombol saja dengan teks minimal.
     """
     talents = await db.get_talents()
     if not talents:
@@ -104,13 +105,24 @@ async def send_welcome_menu(client, chat_id):
                 f"{t['name']}",
                 callback_data=f"talent_{tid}"
             ))
-    # Susun max 2 tombol per baris supaya rapi saat talent banyak
     buttons = [btns[i:i + 2] for i in range(0, len(btns), 2)]
-    welcome_id = await send_template(
-        client, chat_id,
-        await db.get_template("welcome"),
-        markup=InlineKeyboardMarkup(buttons),
-    )
+    markup = InlineKeyboardMarkup(buttons)
+
+    # Cek template welcome — kalau kosong/whitespace, kirim tombol saja
+    template = await db.get_template("welcome")
+    import re
+    clean = re.sub(r'<[^>]+>', '', template).strip() if template else ""
+
+    if clean:
+        # Ada template → kirim rich message + tombol
+        welcome_id = await send_template(
+            client, chat_id, template, markup=markup,
+        )
+    else:
+        # Template kosong → kirim tombol saja dengan teks minimal
+        msg = await bot.send_message(chat_id, "⬇️", reply_markup=bot._convert_markup(markup))
+        welcome_id = msg.id if msg else None
+
     await track_ui(chat_id, welcome_id)
     return welcome_id
 
