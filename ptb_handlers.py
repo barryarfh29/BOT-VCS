@@ -960,8 +960,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-        await message.reply_text("Payment proof received. Processing...")
+        processing_msg = await message.reply_text("Payment proof received. Processing...")
         await asyncio.sleep(2)
+
+        # Hapus pesan "Processing..."
+        try:
+            await processing_msg.delete()
+        except Exception:
+            pass
 
         # Proceed to session
         from rich_message import send_template
