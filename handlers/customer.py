@@ -172,15 +172,19 @@ def register_customer_handlers():
                 ])
             )
         else:
-            # Animasi loading sebelum welcome
+            # Animasi loading sebelum welcome (template dari database, editable via web)
             talents_count = len(await db.get_talents())
-            loading_msg = await bot.send_message(message.chat.id, "🔍 Checking available talents...")
+            tpl1 = (await db.get_template("loading_1")).replace("{count}", str(talents_count))
+            tpl2 = (await db.get_template("loading_2")).replace("{count}", str(talents_count))
+            tpl3 = (await db.get_template("loading_3")).replace("{count}", str(talents_count))
+
+            loading_msg = await bot.send_message(message.chat.id, tpl1)
             await asyncio.sleep(0.8)
             if loading_msg:
-                await loading_msg.edit_text(f"🔍 Checking available talents...\n✅ {talents_count} talents found")
+                await loading_msg.edit_text(tpl2)
             await asyncio.sleep(0.6)
             if loading_msg:
-                await loading_msg.edit_text(f"🔍 Checking available talents...\n✅ {talents_count} talents found\n⏳ Loading menu...")
+                await loading_msg.edit_text(tpl3)
             await asyncio.sleep(0.5)
             if loading_msg:
                 try:

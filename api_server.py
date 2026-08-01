@@ -67,6 +67,9 @@ def _get_allowed_origins() -> set:
 
 TEMPLATE_DESCRIPTIONS = {
     "welcome": "Halaman pilih talent",
+    "loading_1": "Loading step 1 (awal)",
+    "loading_2": "Loading step 2 (talents found). Variabel: {count}",
+    "loading_3": "Loading step 3 (loading menu). Variabel: {count}",
     "payment": "Invoice QRIS",
     "paid": "Pembayaran diterima",
     "connecting": "Menghubungi talent",

@@ -295,6 +295,9 @@ templates_col = db["templates"]
 
 DEFAULT_TEMPLATES = {
     "welcome": "<h4>CHOOSE A TALENT</h4><p>Select a talent below to start your private session.</p><ul><li><p>Private one-on-one live session</p></li><li><p>Easy payment via QRIS - TNG / Maybank / Boost supported</p></li><li><p>Timer starts only after you join</p></li></ul>",
+    "loading_1": "🔍 Checking available talents...",
+    "loading_2": "🔍 Checking available talents...\n✅ {count} talents found",
+    "loading_3": "🔍 Checking available talents...\n✅ {count} talents found\n⏳ Loading menu...",
     "payment": "<h2>QRIS Invoice</h2><h4>Order Details</h4><table><tbody><tr><td><p><strong>Invoice ID</strong></p></td><td><p>{invoice_id}</p></td></tr><tr><td><p><strong>Talent</strong></p></td><td><p>{talent_name}</p></td></tr><tr><td><p><strong>Duration</strong></p></td><td><p>{duration} minutes</p></td></tr></tbody></table><h4>Payment</h4><table><tbody><tr><td><p><strong>Total</strong></p></td><td><p><strong>{nominal}</strong></p></td></tr><tr><td><p><strong>Method</strong></p></td><td><p>QRIS / Cross-border QR</p></td></tr></tbody></table><p>Scan the QR code above to pay. Payment is detected automatically.</p><p>Malaysian e-wallets (TNG, Maybank, Boost) can scan the same code.</p>",
     "paid": "<h4>PAYMENT RECEIVED</h4><p>Your payment has been confirmed.</p><p>Please send a <b>screenshot of your payment proof</b> for verification, or tap <b>Skip</b> to continue.</p>",
     "connecting": "<h4>CONNECTING TO TALENT</h4><p>Contacting <b>{talent_name}</b> to serve you...</p><p>Please wait a moment.</p>",
