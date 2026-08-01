@@ -22,6 +22,22 @@ logger = logging.getLogger(__name__)
 loop_tasks = {}
 
 
+def _parse_cooldown(value) -> float:
+    """Parse cooldown value — bisa angka, string angka, atau format '30s' (detik)."""
+    if not value:
+        return 0
+    s = str(value).strip().lower()
+    if s.endswith("s"):
+        try:
+            return float(s[:-1]) / 60  # detik → menit
+        except (ValueError, TypeError):
+            return 0
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return 0
+
+
 def _video_stream(video_path: str) -> MediaStream:
     """Stream video TANPA audio — talent selalu tampil mute di live stream."""
     return MediaStream(
@@ -361,7 +377,7 @@ async def end_session(session: dict):
     # Set cooldown if talent has one
     if talent_id:
         talent = await db.get_talent(talent_id)
-        cd = float(talent.get("cooldown", 0) or 0) if talent else 0
+        cd = _parse_cooldown(talent.get("cooldown", 0)) if talent else 0
         if cd > 0:
             await db.set_cooldown(talent_id, time.time() + cd * 60)
 
@@ -528,7 +544,7 @@ async def notify_after_cooldown(talent_id: str):
     talent = await db.get_talent(talent_id)
     if not talent:
         return
-    cd = float(talent.get("cooldown", 0) or 0)
+    cd = _parse_cooldown(talent.get("cooldown", 0))
     if cd > 0:
         await asyncio.sleep(cd * 60)
     await db.remove_cooldown(talent_id)
