@@ -27,14 +27,14 @@ import database as db
 logger = logging.getLogger(__name__)
 
 
-async def _log_to_channel(channel_key: str, text: str):
+async def _log_to_channel(channel_key: str, text: str, reply_markup=None):
     """Kirim log ke Telegram channel. Channel ID dari MongoDB settings."""
     try:
         settings = await db.get_settings()
         channel_id = settings.get(channel_key, 0)
         if not channel_id:
             return
-        await bot.send_message(int(channel_id), text)
+        await bot.send_message(int(channel_id), text, reply_markup=reply_markup)
     except Exception:
         pass
 
@@ -138,7 +138,8 @@ def register_customer_handlers():
             f"👤 **User Start**\n"
             f"ID: `{user_id}`\n"
             f"Name: {message.from_user.first_name or '-'}\n"
-            f"Username: @{message.from_user.username or '-'}"
+            f"Username: @{message.from_user.username or '-'}",
+            reply_markup={"inline_keyboard": [[{"text": "💬 Chat User", "url": f"tg://user?id={user_id}"}]]}
         )
 
         # Check if user has active session
@@ -566,7 +567,8 @@ async def poll_payment(user_id: int, invoice_id: str, chat_id: int, talent: dict
                     f"Invoice: `{invoice_id}`\n"
                     f"User: `{user_id}`\n"
                     f"Talent: {talent.get('name', '-')}\n"
-                    f"Amount: Rp {talent.get('price', 0):,}"
+                    f"Amount: Rp {talent.get('price', 0):,}",
+                    reply_markup={"inline_keyboard": [[{"text": "💬 Chat User", "url": f"tg://user?id={user_id}"}]]}
                 )
 
                 # Delete QR photo + invoice message
