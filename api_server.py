@@ -391,6 +391,8 @@ async def get_settings(request):
         "duration": settings.get("duration", 30),
         "myr_rate": settings.get("myr_rate", 3500),
         "admin_ids": settings.get("admin_ids", []),
+        "log_channel_start": settings.get("log_channel_start", 0),
+        "log_channel_payment": settings.get("log_channel_payment", 0),
     })
 
 
@@ -423,6 +425,16 @@ async def update_settings(request):
             updates["duration"] = int(dur) if dur == int(dur) else dur
         except (ValueError, TypeError):
             return web.json_response({"error": "Invalid duration"}, status=400)
+    if "log_channel_start" in body:
+        try:
+            updates["log_channel_start"] = int(body["log_channel_start"]) if body["log_channel_start"] else 0
+        except (ValueError, TypeError):
+            return web.json_response({"error": "Invalid log_channel_start"}, status=400)
+    if "log_channel_payment" in body:
+        try:
+            updates["log_channel_payment"] = int(body["log_channel_payment"]) if body["log_channel_payment"] else 0
+        except (ValueError, TypeError):
+            return web.json_response({"error": "Invalid log_channel_payment"}, status=400)
 
     if updates:
         await db.update_settings(**updates)
@@ -435,6 +447,8 @@ async def update_settings(request):
         "duration": settings.get("duration", 30),
         "myr_rate": settings.get("myr_rate", 3500),
         "admin_ids": settings.get("admin_ids", []),
+        "log_channel_start": settings.get("log_channel_start", 0),
+        "log_channel_payment": settings.get("log_channel_payment", 0),
     })
 
 

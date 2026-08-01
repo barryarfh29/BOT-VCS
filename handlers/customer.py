@@ -22,18 +22,19 @@ from payment import create_invoice, check_invoice
 from handlers.admin import is_admin, admin_state
 from rich_message import render_template, send_template, duration_display, apply_duration_label, strip_price_duration_rows
 from currency import get_myr_rate
-from config import LOG_CHANNEL_START, LOG_CHANNEL_PAYMENT
 import database as db
 
 logger = logging.getLogger(__name__)
 
 
-async def _log_to_channel(channel_id: int, text: str):
-    """Kirim log ke Telegram channel. Silent fail."""
-    if not channel_id:
-        return
+async def _log_to_channel(channel_key: str, text: str):
+    """Kirim log ke Telegram channel. Channel ID dari MongoDB settings."""
     try:
-        await bot.send_message(channel_id, text)
+        settings = await db.get_settings()
+        channel_id = settings.get(channel_key, 0)
+        if not channel_id:
+            return
+        await bot.send_message(int(channel_id), text)
     except Exception:
         pass
 
@@ -133,7 +134,7 @@ def register_customer_handlers():
         await db.log_activity("bot_start", category="user", user_id=user_id, details={"name": message.from_user.first_name})
 
         # Log /start ke channel
-        await _log_to_channel(LOG_CHANNEL_START,
+        await _log_to_channel("log_channel_start",
             f"👤 **User Start**\n"
             f"ID: `{user_id}`\n"
             f"Name: {message.from_user.first_name or '-'}\n"
@@ -560,7 +561,7 @@ async def poll_payment(user_id: int, invoice_id: str, chat_id: int, talent: dict
                 })
 
                 # Log pembayaran berhasil ke channel
-                await _log_to_channel(LOG_CHANNEL_PAYMENT,
+                await _log_to_channel("log_channel_payment",
                     f"💰 **Pembayaran Berhasil**\n"
                     f"Invoice: `{invoice_id}`\n"
                     f"User: `{user_id}`\n"

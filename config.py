@@ -63,9 +63,10 @@ API_PORT = int(os.environ.get("API_PORT", "8080"))
 RATE_LIMIT_MAX = int(os.environ.get("RATE_LIMIT_MAX", "60"))
 RATE_LIMIT_WINDOW = int(os.environ.get("RATE_LIMIT_WINDOW", "60"))  # seconds
 
-# Telegram Log Channels
-LOG_CHANNEL_START = int(os.environ.get("LOG_CHANNEL_START", "0"))  # Channel ID untuk log /start
-LOG_CHANNEL_PAYMENT = int(os.environ.get("LOG_CHANNEL_PAYMENT", "0"))  # Channel ID untuk log pembayaran berhasil
+# Telegram Log Channels (disimpan di MongoDB via web admin, bukan env)
+# Fallback ke env kalau belum diset di web
+LOG_CHANNEL_START = int(os.environ.get("LOG_CHANNEL_START", "0"))
+LOG_CHANNEL_PAYMENT = int(os.environ.get("LOG_CHANNEL_PAYMENT", "0"))
 
 # ============================================================
 # STARTUP VALIDATION
