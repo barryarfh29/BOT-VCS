@@ -33,6 +33,8 @@ def register_admin_handlers():
 
     @bot.on_callback_query(filters.regex("^adm_menu$"))
     async def adm_menu(client, callback: CallbackQuery):
+        if not await is_admin(callback.from_user.id):
+            return await callback.answer("", show_alert=False)
         await callback.message.edit_text(
             "**Admin Panel**",
             reply_markup=InlineKeyboardMarkup([
@@ -477,6 +479,8 @@ def register_admin_handlers():
 
     @bot.on_callback_query(filters.regex("^adm_s_price$"))
     async def adm_s_price(client, cb: CallbackQuery):
+        if not await is_admin(cb.from_user.id):
+            return await cb.answer("", show_alert=False)
         settings = await db.get_settings()
         admin_state[cb.from_user.id] = {"action": "set_price"}
         await cb.message.edit_text(
@@ -486,6 +490,8 @@ def register_admin_handlers():
 
     @bot.on_callback_query(filters.regex("^adm_s_duration$"))
     async def adm_s_duration(client, cb: CallbackQuery):
+        if not await is_admin(cb.from_user.id):
+            return await cb.answer("", show_alert=False)
         settings = await db.get_settings()
         admin_state[cb.from_user.id] = {"action": "set_duration"}
         await cb.message.edit_text(
@@ -495,6 +501,8 @@ def register_admin_handlers():
 
     @bot.on_callback_query(filters.regex("^adm_s_addadmin$"))
     async def adm_s_addadmin(client, cb: CallbackQuery):
+        if not await is_admin(cb.from_user.id):
+            return await cb.answer("", show_alert=False)
         admin_state[cb.from_user.id] = {"action": "add_admin"}
         await cb.message.edit_text(
             "**Kirim user ID:**",
