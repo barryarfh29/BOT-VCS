@@ -708,15 +708,30 @@ async def delete_video(request):
 
 
 async def _serve_media_from_file_id(file_id: str, cache_name: str):
-    """Download media Telegram (sekali, lalu cache lokal) dan balikan path-nya."""
-    from bot_manager import bot
+    """Download media Telegram (sekali, lalu cache lokal) dan balikan path-nya.
+    Coba Bot API dulu, fallback ke userbot untuk file besar (>20MB).
+    """
+    from bot_manager import bot, userbot
     os.makedirs(VIDEO_FOLDER, exist_ok=True)
     local_path = os.path.join(VIDEO_FOLDER, cache_name)
-    if not os.path.isfile(local_path):
-        result = await bot.download_media(file_id, file_name=local_path)
-        if not result:
-            return None
-    return local_path if os.path.isfile(local_path) else None
+    if os.path.isfile(local_path):
+        return local_path
+
+    # Coba Bot API dulu (max 20MB)
+    result = await bot.download_media(file_id, file_name=local_path)
+    if result and os.path.isfile(local_path):
+        return local_path
+
+    # Fallback: pakai userbot (support sampai 2GB)
+    if userbot:
+        try:
+            await userbot.download_media(file_id, file_name=local_path)
+            if os.path.isfile(local_path):
+                return local_path
+        except Exception as e:
+            logger.error(f"Userbot download failed: {e}")
+
+    return None
 
 
 async def get_talent_photo(request):
