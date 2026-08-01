@@ -118,6 +118,20 @@ class BotWrapper:
 # Main bot instance — wrapper compatible with session_manager
 bot = BotWrapper(BOT_TOKEN)
 
+# Pyrogram bot client — hanya untuk download file via MTProto (support file besar)
+# Bot API HTTP limit 20MB, tapi Pyrogram MTProto support sampai 2GB
+_pyro_bot = None
+
+
+async def get_pyro_bot():
+    """Get Pyrogram bot client for file downloads."""
+    global _pyro_bot
+    if _pyro_bot is None:
+        _pyro_bot = Client("download_bot", bot_token=BOT_TOKEN, api_id=API_ID,
+                           api_hash=API_HASH, no_updates=True, workdir="/tmp")
+        await _pyro_bot.start()
+    return _pyro_bot
+
 # Default userbot - pyrofork + pytgcalls
 userbot = None
 call = None
