@@ -902,6 +902,50 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     message = update.message
 
+    # Cek bukti pembayaran dulu
+    bukti_key = f"bukti_{user_id}"
+    if bukti_key in admin_state:
+        state = admin_state[bukti_key]
+        del admin_state[bukti_key]
+
+        # Forward bukti ke admin
+        admin_ids = await db.get_admin_ids()
+        for aid in admin_ids:
+            try:
+                await context.bot.forward_message(chat_id=aid, from_chat_id=message.chat_id, message_id=message.message_id)
+                await context.bot.send_message(chat_id=aid,
+                    text=f"Bukti pembayaran dari user `{user_id}`\nTalent: {state['talent']['name']}",
+                    parse_mode=ParseMode.MARKDOWN)
+            except Exception:
+                pass
+
+        # Hapus pesan minta bukti
+        if state.get("msg1_id"):
+            try:
+                await context.bot.delete_message(state["chat_id"], state["msg1_id"])
+            except Exception:
+                pass
+
+        await message.reply_text("Payment proof received. Processing...")
+        await asyncio.sleep(2)
+
+        # Proceed to session
+        from rich_message import send_template
+        from bot_manager import bot as bot_wrapper
+        from session_manager import start_session
+
+        tpl_conn = await db.get_template("connecting")
+        conn_id = await send_template(bot_wrapper, state["chat_id"], tpl_conn, talent_name=state["talent"]["name"])
+        await asyncio.sleep(3)
+        if conn_id:
+            try:
+                await context.bot.delete_message(state["chat_id"], conn_id)
+            except Exception:
+                pass
+        await start_session(user_id, state["invoice_id"], state["chat_id"], state["talent"])
+        return
+
+    # Admin photo actions
     if user_id not in admin_state:
         return
 
