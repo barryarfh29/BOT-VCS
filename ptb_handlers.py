@@ -549,15 +549,28 @@ async def _handle_talent_full(update, context, data):
     talent = await db.get_talent(talent_id)
     if not talent:
         return
+
+    from rich_message import send_template
+    from bot_manager import bot as bot_wrapper
+
+    chat_id = query.message.chat_id
     is_sub = await db.is_subscribed(talent_id, query.from_user.id)
     notif_text = "Disable Notifications" if is_sub else "Enable Notifications"
-    await query.message.edit_text(
-        f"**{talent['name']} IS BUSY**\n\nCurrently serving another customer.",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(notif_text, callback_data=f"sub_{talent_id}")],
-            [InlineKeyboardButton("Back", callback_data="back_menu")],
-        ]))
+
+    # Clean + delete old message
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    await _clean_ui(chat_id, context)
+
+    tpl = await db.get_template("talent_full")
+    markup_dict = {"inline_keyboard": [
+        [{"text": notif_text, "callback_data": f"sub_{talent_id}"}],
+        [{"text": "Back", "callback_data": "back_menu"}],
+    ]}
+    msg_id = await send_template(bot_wrapper, chat_id, tpl, markup=markup_dict, talent_name=talent["name"])
+    await _track_ui(chat_id, msg_id)
 
 
 async def _handle_subscribe(update, context, data):
