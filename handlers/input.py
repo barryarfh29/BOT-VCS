@@ -75,10 +75,13 @@ def register_input_handlers():
     @bot.on_message((filters.video | filters.document) & filters.private)
     async def handle_video(client, message: Message):
         uid = message.from_user.id
+        logger.info(f"handle_video: uid={uid}, admin_state_keys={list(admin_state.keys())}")
         if uid not in admin_state:
+            logger.info(f"handle_video: uid {uid} NOT in admin_state, ignoring")
             return
         state = admin_state[uid]
         if state.get("action") not in ["edit_video", "add_talent"]:
+            logger.info(f"handle_video: action={state.get('action')}, not video action")
             return
 
         # Ambil file info
