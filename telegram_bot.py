@@ -311,6 +311,8 @@ class BotClient:
             try:
                 async with session.post(f"{API_URL}/sendVideo", data=form) as resp:
                     r = await resp.json()
+                    if not r.get("ok"):
+                        logger.error(f"send_video failed: {r.get('description', '')} (file: {video}, size: {os.path.getsize(video)} bytes)")
             except Exception as e:
                 logger.error(f"send_video upload error: {e}")
                 r = {"ok": False}
