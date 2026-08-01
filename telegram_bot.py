@@ -414,6 +414,9 @@ class BotClient:
                     except Exception as e:
                         logger.error(f"Handler error: {e}", exc_info=True)
                     return
+            # No handler matched
+            keys = list(update['message'].keys())
+            logger.info(f"No handler match: keys={keys}, chat_type={update['message'].get('chat',{}).get('type')}")
 
         elif "callback_query" in update:
             cb = CallbackQueryObj(update["callback_query"], self)
