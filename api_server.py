@@ -529,7 +529,7 @@ async def _file_id_via_bot(local_path: str, kind: str):
         sent = await bot.send_photo(target, photo=local_path)
         if not sent or not sent.photo:
             raise RuntimeError(f"Failed to upload photo to Telegram")
-        file_id = sent.photo.file_id
+        file_id = sent.photo[-1].file_id
     else:
         sent = await bot.send_video(target, video=local_path)
         if not sent:

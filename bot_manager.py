@@ -1,7 +1,7 @@
 """
 Bot Manager - Multi-userbot management
-Bot utama pakai HTTP Bot API (telegram_bot.py) — reliable di Docker.
-Userbot + pytgcalls tetap pakai pyrofork.
+Bot utama: python-telegram-bot (PTB) — reliable polling.
+Userbot + pytgcalls: pyrofork.
 """
 
 import os
@@ -9,14 +9,98 @@ import logging
 from pyrogram import Client
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality, VideoQuality
+from telegram import Bot
+from telegram.constants import ParseMode as TGParseMode
 
 from config import API_ID, API_HASH, BOT_TOKEN, USERBOT_SESSION
-from telegram_bot import BotClient
 
 logger = logging.getLogger(__name__)
 
-# Main bot instance — HTTP Bot API (bukan Pyrogram MTProto)
-bot = BotClient()
+
+class BotWrapper:
+    """Wrapper around PTB Bot that provides interface compatible with session_manager."""
+
+    def __init__(self, token):
+        self._bot = Bot(token=token)
+
+    @property
+    def bot(self):
+        return self._bot
+
+    async def send_message(self, chat_id, text, parse_mode="Markdown", reply_markup=None, **kwargs):
+        pm = TGParseMode.MARKDOWN if parse_mode and "markdown" in str(parse_mode).lower() else TGParseMode.HTML if parse_mode and "html" in str(parse_mode).lower() else None
+        # Convert Pyrogram markup to PTB markup if needed
+        rm = self._convert_markup(reply_markup)
+        try:
+            msg = await self._bot.send_message(chat_id=chat_id, text=text, parse_mode=pm, reply_markup=rm, **kwargs)
+            return msg
+        except Exception as e:
+            logger.error(f"send_message error: {e}")
+            return None
+
+    @staticmethod
+    def _convert_markup(markup):
+        """Convert Pyrogram InlineKeyboardMarkup to PTB format if needed."""
+        if markup is None:
+            return None
+        # Already PTB format
+        if hasattr(markup, 'to_json') or isinstance(markup, dict):
+            return markup
+        # Pyrogram InlineKeyboardMarkup → PTB InlineKeyboardMarkup
+        if hasattr(markup, 'inline_keyboard'):
+            from telegram import InlineKeyboardMarkup as PTBMarkup, InlineKeyboardButton as PTBButton
+            rows = []
+            for row in markup.inline_keyboard:
+                btns = []
+                for b in row:
+                    if getattr(b, "callback_data", None):
+                        btns.append(PTBButton(text=b.text, callback_data=b.callback_data))
+                    elif getattr(b, "url", None):
+                        btns.append(PTBButton(text=b.text, url=b.url))
+                    else:
+                        btns.append(PTBButton(text=b.text, callback_data="noop"))
+                rows.append(btns)
+            return PTBMarkup(rows)
+        return markup
+
+    async def delete_messages(self, chat_id, message_ids):
+        if isinstance(message_ids, int):
+            message_ids = [message_ids]
+        for mid in message_ids:
+            try:
+                await self._bot.delete_message(chat_id=chat_id, message_id=mid)
+            except Exception:
+                pass
+
+    async def download_media(self, file_id, file_name=None):
+        """Download file from Telegram."""
+        try:
+            file = await self._bot.get_file(file_id)
+            await file.download_to_drive(file_name)
+            return file_name
+        except Exception as e:
+            logger.error(f"download_media error: {e}")
+            return None
+
+    async def send_photo(self, chat_id, photo, caption=None, parse_mode="Markdown", reply_markup=None):
+        pm = TGParseMode.MARKDOWN if parse_mode and "markdown" in parse_mode.lower() else None
+        try:
+            return await self._bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, parse_mode=pm, reply_markup=reply_markup)
+        except Exception as e:
+            logger.error(f"send_photo error: {e}")
+            return None
+
+    async def send_video(self, chat_id, video, caption=None, parse_mode="Markdown", reply_markup=None):
+        pm = TGParseMode.MARKDOWN if parse_mode and "markdown" in parse_mode.lower() else None
+        try:
+            return await self._bot.send_video(chat_id=chat_id, video=video, caption=caption, parse_mode=pm, reply_markup=reply_markup)
+        except Exception as e:
+            logger.error(f"send_video error: {e}")
+            return None
+
+
+# Main bot instance — wrapper compatible with session_manager
+bot = BotWrapper(BOT_TOKEN)
 
 # Default userbot - pyrofork + pytgcalls
 userbot = None
@@ -41,12 +125,13 @@ async def start_default_userbot():
         session_string = os.environ.get("USERBOT_SESSION_STRING", "")
 
     if not session_string:
-        logger.warning("No userbot session available. Login via bot required.")
-        print("⚠️  Userbot belum login. Admin perlu login via bot (Setting → Login Userbot)")
+        logger.warning("No userbot session available.")
+        print("⚠️  Userbot belum login.")
         return False
 
     try:
-        userbot = Client("default_userbot", api_id=API_ID, api_hash=API_HASH, session_string=session_string, no_updates=True, workdir="/tmp")
+        userbot = Client("default_userbot", api_id=API_ID, api_hash=API_HASH,
+                         session_string=session_string, no_updates=True, workdir="/tmp")
         await userbot.start()
         call = PyTgCalls(userbot)
         await call.start()
@@ -64,14 +149,8 @@ async def start_default_userbot():
 async def start_talent_bot(talent_id: str, session_string: str):
     """Start a talent-specific userbot with pytgcalls."""
     try:
-        c = Client(
-            f"talent_{talent_id}",
-            api_id=API_ID,
-            api_hash=API_HASH,
-            session_string=session_string,
-            no_updates=True,
-            workdir="/tmp",
-        )
+        c = Client(f"talent_{talent_id}", api_id=API_ID, api_hash=API_HASH,
+                   session_string=session_string, no_updates=True, workdir="/tmp")
         await c.start()
         tc = PyTgCalls(c)
         await tc.start()
@@ -91,17 +170,3 @@ async def get_talent_bot(talent_id: str):
     if talent_id and talent_id in talent_bots and talent_bots[talent_id]["ready"]:
         return talent_bots[talent_id]["client"], talent_bots[talent_id]["call"]
     return userbot, call
-
-
-async def stop_all_bots():
-    """Gracefully stop all bots."""
-    for tid, info in talent_bots.items():
-        try:
-            await info["client"].stop()
-        except Exception:
-            pass
-    try:
-        if userbot:
-            await userbot.stop()
-    except Exception:
-        pass

@@ -316,7 +316,7 @@ async def send_template(client, chat_id: int, html_template: str, markup=None,
             reply_markup=dict_to_markup(markup),
             disable_web_page_preview=disable_preview,
         )
-        return msg.id
+        return getattr(msg, 'message_id', None) or getattr(msg, 'id', None)
     except Exception as e:
         logger.error(f"send_template fallback failed: {e}")
         return None
