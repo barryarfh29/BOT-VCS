@@ -108,6 +108,7 @@ def register_customer_handlers():
     @bot.on_message(filters.command("start") & filters.private)
     async def cmd_start(client, message: Message):
         user_id = message.from_user.id
+        logger.info(f"/start from user_id={user_id}, name={message.from_user.first_name}")
         admin_state.pop(user_id, None)
 
         # Bersihkan sisa pesan UI dari navigasi sebelumnya
@@ -139,7 +140,10 @@ def register_customer_handlers():
             )
             return
 
-        if await is_admin(user_id):
+        admin_check = await is_admin(user_id)
+        logger.info(f"user_id={user_id}, is_admin={admin_check}, admin_ids={await db.get_admin_ids()}")
+
+        if admin_check:
             await message.reply_text(
                 "**Admin Panel**",
                 reply_markup=InlineKeyboardMarkup([
