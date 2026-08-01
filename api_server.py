@@ -1004,7 +1004,7 @@ async def get_frontend_config(request):
     """
     return web.json_response({
         "api_url": BASE_URL,
-        "version": "1.0.0",
+        "version": "1.1.0",
     })
 
 
