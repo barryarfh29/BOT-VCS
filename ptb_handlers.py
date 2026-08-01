@@ -645,13 +645,23 @@ async def _start_order(update, context, talent):
         qr_file.name = "qris.png"
         qr_msg = await context.bot.send_photo(chat_id, photo=qr_file)
 
-    text = (f"**QRIS Invoice**\n\nInvoice: `{invoice_id}`\nTalent: {talent['name']}\n"
-            f"Duration: {duration}m\nTotal: **{nominal}**\n\nScan QR to pay.")
-    pay_msg = await context.bot.send_message(chat_id, text, parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Check", callback_data=f"chk_{invoice_id}"),
-             InlineKeyboardButton("Cancel", callback_data=f"cnl_{invoice_id}")]
-        ]))
+    # Send rich payment template
+    from rich_message import send_template, duration_display, apply_duration_label
+    from bot_manager import bot as bot_wrapper
+
+    tpl = await db.get_template("payment")
+    tpl = apply_duration_label(tpl, talent)
+    markup_dict = {"inline_keyboard": [[
+        {"text": "Check", "callback_data": f"chk_{invoice_id}"},
+        {"text": "Cancel", "callback_data": f"cnl_{invoice_id}"}
+    ]]}
+    pay_msg_id = await send_template(
+        bot_wrapper, chat_id, tpl,
+        markup=markup_dict,
+        invoice_id=invoice_id, talent_name=talent["name"],
+        duration=duration_display(talent) if hasattr(talent, 'get') else str(talent.get("duration", "")),
+        nominal=nominal,
+    )
 
     await db.add_transaction({
         "invoice_id": invoice_id, "merchant_ref": merchant_ref,
@@ -662,7 +672,7 @@ async def _start_order(update, context, talent):
 
     # Poll payment in background
     asyncio.create_task(_poll_payment(context, user.id, invoice_id, chat_id, talent,
-                                     [qr_msg.message_id if qr_msg else None, pay_msg.message_id]))
+                                     [qr_msg.message_id if qr_msg else None, pay_msg_id]))
 
 
 async def _poll_payment(context, user_id, invoice_id, chat_id, talent, msg_ids):
