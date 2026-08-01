@@ -452,21 +452,50 @@ class BotClient:
     def _match_cb_filter(self, filt, cb: 'CallbackQueryObj') -> bool:
         """Match callback filter (Pyrogram regex pattern)."""
         import re
-        # Pyrogram filters.regex creates object with .pattern attribute
+
+        # Direct pattern attribute (filters.regex creates this)
         if hasattr(filt, 'pattern'):
             pattern = filt.pattern
             if isinstance(pattern, str):
                 return bool(re.match(pattern, cb.data))
             elif hasattr(pattern, 'match'):
                 return bool(pattern.match(cb.data))
-            else:
-                return bool(re.match(str(pattern), cb.data))
-        # Check if it's a combined filter (AndFilter wrapping regex)
-        if hasattr(filt, 'base'):
+            elif hasattr(pattern, 'pattern'):
+                # Compiled regex has .pattern attribute with string
+                return bool(re.match(pattern.pattern, cb.data))
+            return bool(re.match(str(pattern), cb.data))
+
+        # filters.regex wraps in RegexFilter which has .pattern
+        # But sometimes it's wrapped in another layer
+        if hasattr(filt, 'r') and hasattr(filt.r, 'pattern'):
+            return bool(filt.r.match(cb.data))
+
+        # Try to find pattern in any attribute
+        for attr_name in ('pattern', 'regex', 'r', 'p'):
+            attr = getattr(filt, attr_name, None)
+            if attr and hasattr(attr, 'match'):
+                return bool(attr.match(cb.data))
+            elif attr and isinstance(attr, str):
+                return bool(re.match(attr, cb.data))
+
+        # Combined filter (AndFilter)
+        if hasattr(filt, 'base') and hasattr(filt, 'other'):
+            return self._match_cb_filter(filt.base, cb) and self._match_cb_filter(filt.other, cb)
+        elif hasattr(filt, 'base'):
             return self._match_cb_filter(filt.base, cb)
-        if hasattr(filt, 'other'):
-            return self._match_cb_filter(filt.other, cb)
-        # No pattern found — DON'T match (safe default)
+
+        # Last resort: try calling the filter
+        try:
+            # Pyrogram filters are callable
+            result = filt(cb)
+            if asyncio.iscoroutine(result):
+                return False  # Can't await here safely
+            return bool(result)
+        except Exception:
+            pass
+
+        # Unknown filter — don't match
+        logger.warning(f"Unknown callback filter type: {type(filt).__name__}, attrs: {dir(filt)[:10]}")
         return False
 
     # --- Utility ---
