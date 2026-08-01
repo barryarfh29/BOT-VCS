@@ -608,22 +608,34 @@ async def _process_video_upload(talent_id: str, filename: str, raw_path: str):
     try:
         from media_utils import probe_duration_seconds, probe_video_codec
 
-        if probe_video_codec(raw_path) == "h264":
+        file_size = os.path.getsize(raw_path)
+        codec = probe_video_codec(raw_path)
+
+        # Telegram Bot API limit: 50MB. Kalau file >45MB, paksa re-encode
+        needs_encode = (codec != "h264") or (file_size > 45 * 1024 * 1024)
+
+        if not needs_encode:
             compressed_path = raw_path
         else:
             import subprocess
             cmd = [
                 "ffmpeg", "-y", "-i", raw_path,
                 "-c:v", "libx264", "-preset", "ultrafast",
-                "-crf", "28",
+                "-crf", "30" if file_size > 45 * 1024 * 1024 else "28",
                 "-vf", "scale=-2:'min(ih,720)'",
-                "-c:a", "aac", "-b:a", "128k",
+                "-c:a", "aac", "-b:a", "96k",
                 "-movflags", "+faststart",
                 compressed_path
             ]
             proc = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, timeout=300)
             if proc.returncode != 0 or not os.path.isfile(compressed_path):
                 compressed_path = raw_path
+
+        # Cek final size — kalau masih >50MB, gagal
+        final_size = os.path.getsize(compressed_path)
+        if final_size > 50 * 1024 * 1024:
+            logger.error(f"Video too large after compress: {final_size} bytes ({filename})")
+            return
 
         length_seconds = probe_duration_seconds(compressed_path)
         file_id = await _file_id_via_bot(compressed_path, "video")
