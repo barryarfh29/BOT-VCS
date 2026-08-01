@@ -560,14 +560,21 @@ async def upload_talent_photo(request):
     filename, local_path = await _read_upload(request)
     if not local_path:
         return web.json_response({"error": "No file"}, status=400)
+
+    # Proses di background
+    asyncio.create_task(_process_photo_upload(talent_id, local_path))
+
+    return web.json_response({"ok": True, "message": "Foto sedang diproses..."})
+
+
+async def _process_photo_upload(talent_id: str, local_path: str):
+    """Background: upload photo to Telegram."""
     try:
         file_id = await _file_id_via_bot(local_path, "photo")
         await db.update_talent(talent_id, photo=file_id)
         await db.log_activity("talent_photo_updated", category="admin", details={"talent_id": talent_id, "via": "web"})
-        return web.json_response({"ok": True})
     except Exception as e:
         logger.error(f"Photo upload failed: {e}")
-        return web.json_response({"error": str(e)}, status=500)
     finally:
         try:
             os.remove(local_path)
@@ -589,15 +596,21 @@ async def upload_talent_video(request):
     if not raw_path:
         return web.json_response({"error": "No file"}, status=400)
 
+    # Proses di background — response langsung balik supaya tidak timeout
+    asyncio.create_task(_process_video_upload(talent_id, filename, raw_path))
+
+    return web.json_response({"ok": True, "message": "Video sedang diproses..."})
+
+
+async def _process_video_upload(talent_id: str, filename: str, raw_path: str):
+    """Background: compress + upload to Telegram."""
     compressed_path = os.path.join(VIDEO_FOLDER, f"opt_{filename}")
     try:
         from media_utils import probe_duration_seconds, probe_video_codec
-        # Mode cepat: kalau video sudah H.264 (mayoritas file dari HP/kamera),
-        # upload apa adanya tanpa re-encode ffmpeg yang berat di CPU.
+
         if probe_video_codec(raw_path) == "h264":
             compressed_path = raw_path
         else:
-            # Kompres dengan FFmpeg (720p, ultrafast, CRF 28)
             import subprocess
             cmd = [
                 "ffmpeg", "-y", "-i", raw_path,
@@ -610,22 +623,17 @@ async def upload_talent_video(request):
             ]
             proc = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, timeout=300)
             if proc.returncode != 0 or not os.path.isfile(compressed_path):
-                compressed_path = raw_path  # fallback: pakai file asli
+                compressed_path = raw_path
 
-        # Deteksi panjang video (detik) untuk info admin
         length_seconds = probe_duration_seconds(compressed_path)
-
         file_id = await _file_id_via_bot(compressed_path, "video")
         await db.add_video_to_talent(talent_id, {
             "file_id": file_id, "filename": filename,
             "title": "", "length_seconds": length_seconds,
         })
         await db.log_activity("talent_video_added", category="admin", details={"talent_id": talent_id, "filename": filename, "via": "web"})
-        talent = await db.get_talent(talent_id)
-        return web.json_response(_talent_detail_json(talent))
     except Exception as e:
-        logger.error(f"Video upload failed: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        logger.error(f"Video process failed: {e}")
     finally:
         for p in {raw_path, compressed_path}:
             try:
