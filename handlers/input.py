@@ -74,7 +74,7 @@ def register_input_handlers():
 
     @bot.on_message(filters.private)
     async def handle_video(client, message: Message):
-        # Manual check: hanya handle kalau ada video atau document
+        # Manual check: hanya handle kalau ada video atau document DAN admin dalam state edit_video
         if not message.video and not message.document:
             return
         uid = message.from_user.id
