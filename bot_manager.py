@@ -40,12 +40,27 @@ class BotWrapper:
 
     @staticmethod
     def _convert_markup(markup):
-        """Convert Pyrogram InlineKeyboardMarkup to PTB format if needed."""
+        """Convert any markup format to PTB InlineKeyboardMarkup."""
         if markup is None:
             return None
-        # Already PTB format
-        if hasattr(markup, 'to_json') or isinstance(markup, dict):
+        # Already PTB InlineKeyboardMarkup
+        if hasattr(markup, 'inline_keyboard') and hasattr(markup, 'to_json'):
             return markup
+        # Dict format {"inline_keyboard": [[{"text":..., "callback_data":...}]]}
+        if isinstance(markup, dict) and "inline_keyboard" in markup:
+            from telegram import InlineKeyboardMarkup as PTBMarkup, InlineKeyboardButton as PTBButton
+            rows = []
+            for row in markup["inline_keyboard"]:
+                btns = []
+                for b in row:
+                    if b.get("callback_data"):
+                        btns.append(PTBButton(text=b["text"], callback_data=b["callback_data"]))
+                    elif b.get("url"):
+                        btns.append(PTBButton(text=b["text"], url=b["url"]))
+                    else:
+                        btns.append(PTBButton(text=b["text"], callback_data="noop"))
+                rows.append(btns)
+            return PTBMarkup(rows)
         # Pyrogram InlineKeyboardMarkup → PTB InlineKeyboardMarkup
         if hasattr(markup, 'inline_keyboard'):
             from telegram import InlineKeyboardMarkup as PTBMarkup, InlineKeyboardButton as PTBButton

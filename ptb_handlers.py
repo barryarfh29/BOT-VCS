@@ -439,24 +439,59 @@ async def _handle_talent_detail(update, context, data):
         return
 
     from currency import get_myr_rate
+    from rich_message import send_template, duration_display, apply_duration_label, strip_price_duration_rows
+    from bot_manager import bot
+
     myr_rate = await get_myr_rate()
-    price_str = f"Rp {talent['price']:,} / {talent['price']/myr_rate:.2f} MYR"
+    price_str = f"{talent['price']:,} IDR / {talent['price']/myr_rate:.2f} MYR"
 
     packages = talent.get("packages") or []
     if packages:
         btns = []
         for i, p in enumerate(packages):
             lbl = (p.get("label") or "").strip() or f"{p.get('duration',0)} min"
-            btns.append(InlineKeyboardButton(f"{lbl} — Rp {int(p.get('price',0)):,}",
+            pkg_price = int(p.get('price', 0))
+            btns.append(InlineKeyboardButton(f"{lbl} — Rp {pkg_price:,}",
                                              callback_data=f"pord_{talent_id}_{i}"))
         buttons = [btns[j:j+2] for j in range(0, len(btns), 2)]
     else:
         buttons = [[InlineKeyboardButton("Order", callback_data=f"order_{talent_id}")]]
     buttons.append([InlineKeyboardButton("Back", callback_data="back_menu")])
 
-    text = f"**{talent['name']}**\n\n{talent.get('desc','')}\n\nPrice: {price_str}\nDuration: {talent['duration']}m"
-    await query.message.edit_text(text, parse_mode=ParseMode.MARKDOWN,
-                                  reply_markup=InlineKeyboardMarkup(buttons))
+    # Delete old message
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+    # Send photo
+    chat_id = query.message.chat_id
+    if talent.get("photo"):
+        try:
+            await context.bot.send_photo(chat_id=chat_id, photo=talent["photo"])
+        except Exception:
+            pass
+
+    # Send rich template
+    tpl = await db.get_template("talent_detail")
+    tpl = apply_duration_label(tpl, talent)
+    if packages:
+        tpl = strip_price_duration_rows(tpl)
+
+    # Build markup as dict (compatible with both rich message and fallback)
+    markup_rows = []
+    for row in buttons:
+        markup_rows.append([{"text": b.text, "callback_data": b.callback_data} for b in row])
+    markup_dict = {"inline_keyboard": markup_rows}
+
+    await send_template(
+        bot, chat_id, tpl,
+        markup=markup_dict,
+        talent_name=talent["name"],
+        desc=talent.get("desc", ""),
+        price=price_str,
+        duration=duration_display(talent),
+    )
 
 
 async def _handle_talent_full(update, context, data):
