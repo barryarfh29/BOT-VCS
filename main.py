@@ -1,6 +1,9 @@
 """
 Main Entry Point - Video Call Berbayar Bot
 Multi-userbot + MongoDB + Video Rotation + Loop
+
+Bot utama: HTTP Bot API polling (reliable di Docker/EasyPanel)
+Userbot: pyrofork + pytgcalls (untuk streaming)
 """
 
 import os
@@ -8,7 +11,6 @@ import asyncio
 import time
 import logging
 
-# Load .env file kalau ada (development)
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -20,6 +22,7 @@ from bot_manager import bot, start_default_userbot, start_talent_bot
 from session_manager import session_timer, end_session, get_video_list
 from handlers import register_all_handlers
 from api_server import start_api_server
+from polling import start_polling
 import database as db
 
 # ============================================================
@@ -53,24 +56,16 @@ async def main():
     print("=" * 55)
     os.makedirs(VIDEO_FOLDER, exist_ok=True)
 
-    # Register all handlers
+    # Register all handlers pada bot object
     register_all_handlers()
 
-    # Start main bot (with flood wait retry)
-    from pyrogram.errors import FloodWait
-    while True:
-        try:
-            await bot.start()
-            break
-        except FloodWait as e:
-            print(f"FloodWait: waiting {e.value} seconds...")
-            await asyncio.sleep(e.value + 5)
-
+    # Start bot (HTTP API — hanya getMe, tidak polling via MTProto)
+    await bot.start()
     me_bot = await bot.get_me()
     print(f"✅ Bot: @{me_bot.username}")
     logger.info(f"Bot started: @{me_bot.username}")
 
-    # Start default userbot
+    # Start default userbot (pyrofork + pytgcalls)
     await start_default_userbot()
 
     # Load talent-specific bots from DB
@@ -105,9 +100,17 @@ async def main():
     # Start API server
     await start_api_server(API_PORT)
 
+    # Start HTTP long-polling (reliable, tidak pakai MTProto)
+    asyncio.create_task(start_polling(bot))
+
     # Keep running
     await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        import traceback
+        print(f"FATAL ERROR: {e}")
+        traceback.print_exc()

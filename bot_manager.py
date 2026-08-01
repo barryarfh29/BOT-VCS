@@ -1,6 +1,7 @@
 """
 Bot Manager - Multi-userbot management
-Handles default userbot + per-talent userbots with pytgcalls
+Bot utama pakai HTTP Bot API (telegram_bot.py) — reliable di Docker.
+Userbot + pytgcalls tetap pakai pyrofork.
 """
 
 import os
@@ -10,13 +11,14 @@ from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality, VideoQuality
 
 from config import API_ID, API_HASH, BOT_TOKEN, USERBOT_SESSION
+from telegram_bot import BotClient
 
 logger = logging.getLogger(__name__)
 
-# Main bot instance
-bot = Client("payment_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
+# Main bot instance — HTTP Bot API (bukan Pyrogram MTProto)
+bot = BotClient()
 
-# Default userbot - akan di-start setelah session tersedia
+# Default userbot - pyrofork + pytgcalls
 userbot = None
 call = None
 
@@ -31,18 +33,16 @@ async def start_default_userbot():
     """Start default userbot from session string in MongoDB or env."""
     global userbot, call, userbot_ready
 
-    # Coba ambil session string dari MongoDB
     import database as db
     settings = await db.get_settings()
     session_string = settings.get("userbot_session_string", "")
 
-    # Fallback ke env
     if not session_string:
         session_string = os.environ.get("USERBOT_SESSION_STRING", "")
 
     if not session_string:
         logger.warning("No userbot session available. Login via bot required.")
-        print("⚠️  Userbot belum login. Admin perlu login via bot (Setting → 📱 Login Userbot)")
+        print("⚠️  Userbot belum login. Admin perlu login via bot (Setting → Login Userbot)")
         return False
 
     try:
@@ -99,10 +99,7 @@ async def stop_all_bots():
         except Exception:
             pass
     try:
-        await userbot.stop()
-    except Exception:
-        pass
-    try:
-        await bot.stop()
+        if userbot:
+            await userbot.stop()
     except Exception:
         pass
