@@ -320,21 +320,107 @@ async def _handle_admin_callback(update, context, data):
         admin_state[user_id] = {"action": "add_talent", "step": "photo"}
         await query.message.edit_text("**Tambah Talent**\n\nKirim foto:", parse_mode=ParseMode.MARKDOWN)
 
-    elif data.startswith("adm_s_price"):
+    elif data.startswith("adm_vplay_"):
+        talent_id = data.replace("adm_vplay_", "")
+        talent = await db.get_talent(talent_id)
+        if not talent:
+            return
+        videos = talent.get("videos", [])
+        if not videos:
+            await query.answer("Belum ada video.", show_alert=True)
+            return
+        for v in videos:
+            if isinstance(v, dict) and v.get("file_id"):
+                try:
+                    await context.bot.send_video(chat_id=query.message.chat_id, video=v["file_id"],
+                                                 caption=f"`{v.get('filename','video')}`", parse_mode=ParseMode.MARKDOWN)
+                except Exception:
+                    try:
+                        await context.bot.send_document(chat_id=query.message.chat_id, document=v["file_id"],
+                                                       caption=f"`{v.get('filename','video')}`", parse_mode=ParseMode.MARKDOWN)
+                    except Exception:
+                        pass
+
+    elif data.startswith("adm_vdel_"):
+        talent_id = data.replace("adm_vdel_", "")
+        talent = await db.get_talent(talent_id)
+        if not talent:
+            return
+        videos = talent.get("videos", [])
+        if not videos:
+            await query.answer("Tidak ada video.", show_alert=True)
+            return
+        buttons = []
+        for i, v in enumerate(videos):
+            fname = v.get('filename', f'video_{i}') if isinstance(v, dict) else str(v)
+            buttons.append([InlineKeyboardButton(fname, callback_data=f"adm_vrem_{talent_id}_{i}")])
+        buttons.append([InlineKeyboardButton("Kembali", callback_data=f"adm_tedit_{talent_id}")])
+        await query.message.edit_text("**Pilih video untuk dihapus:**", parse_mode=ParseMode.MARKDOWN,
+                                      reply_markup=InlineKeyboardMarkup(buttons))
+
+    elif data.startswith("adm_vrem_"):
+        raw = data.replace("adm_vrem_", "")
+        last_us = raw.rfind("_")
+        talent_id = raw[:last_us]
+        idx = int(raw[last_us + 1:])
+        await db.remove_video_from_talent(talent_id, idx)
+        await _handle_admin_callback(update, context, f"adm_tedit_{talent_id}")
+
+    elif data.startswith("adm_pkg_"):
+        talent_id = data.replace("adm_pkg_", "")
+        talent = await db.get_talent(talent_id)
+        if not talent:
+            return
+        pkgs = talent.get("packages") or []
+        if pkgs:
+            lines = []
+            for i, p in enumerate(pkgs):
+                lbl = (p.get('label') or '').strip() or f"{p.get('duration',0)}m"
+                lines.append(f"  {i+1}. {lbl} — Rp {int(p.get('price',0)):,}")
+            body = "\n".join(lines)
+        else:
+            body = "(belum ada)"
+        buttons = [[InlineKeyboardButton("+ Tambah Paket", callback_data=f"adm_pkgadd_{talent_id}")]]
+        buttons.append([InlineKeyboardButton("Kembali", callback_data=f"adm_tedit_{talent_id}")])
+        await query.message.edit_text(f"**Paket Durasi**\n\n{body}", parse_mode=ParseMode.MARKDOWN,
+                                      reply_markup=InlineKeyboardMarkup(buttons))
+
+    elif data.startswith("adm_pkgadd_"):
+        talent_id = data.replace("adm_pkgadd_", "")
+        admin_state[user_id] = {"action": "add_package", "talent_id": talent_id}
+        await query.message.edit_text(
+            "**Tambah Paket**\n\nKirim: `durasi harga [label]`\nContoh: `5 50000 Exclusive`",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Batal", callback_data=f"adm_pkg_{talent_id}")]]))
+
+    # Catch-all — route to settings sub-handler or show not available
+    elif data.startswith("adm_s_"):
+        await _handle_admin_settings_callback(update, context, data)
+    else:
+        await query.answer("Fitur ini belum tersedia.", show_alert=True)
+
+
+# Additional admin settings handlers
+async def _handle_admin_settings_callback(update, context, data):
+    """Called from _handle_admin_callback for adm_s_ prefix."""
+    query = update.callback_query
+    user_id = query.from_user.id
+
+    if data == "adm_s_price":
         admin_state[user_id] = {"action": "set_price"}
         s = await db.get_settings()
         await query.message.edit_text(f"**Kirim harga baru:**\n\nSaat ini: Rp {s.get('price',50000):,}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Batal", callback_data="adm_setting")]]))
 
-    elif data.startswith("adm_s_duration"):
+    elif data == "adm_s_duration":
         admin_state[user_id] = {"action": "set_duration"}
         s = await db.get_settings()
         await query.message.edit_text(f"**Kirim durasi baru (menit):**\n\nSaat ini: {s.get('duration',30)}m",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Batal", callback_data="adm_setting")]]))
 
-    elif data.startswith("adm_s_addadmin"):
+    elif data == "adm_s_addadmin":
         admin_state[user_id] = {"action": "add_admin"}
         await query.message.edit_text("**Kirim user ID:**", parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Batal", callback_data="adm_setting")]]))
