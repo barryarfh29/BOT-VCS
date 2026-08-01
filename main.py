@@ -27,7 +27,6 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-# Suppress noisy loggers
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
 logging.getLogger("pytgcalls").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -36,12 +35,49 @@ logging.getLogger("telegram.ext").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-async def post_init(application):
-    """Called after PTB Application is initialized."""
+async def main():
+    from telegram.ext import (
+        ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+        MessageHandler, filters
+    )
+    from ptb_handlers import (
+        cmd_start, handle_callback, handle_photo,
+        handle_video_document, handle_text
+    )
     from bot_manager import start_default_userbot, start_talent_bot
     from session_manager import session_timer, end_session, get_video_list
     from api_server import start_api_server
     import database as db
+
+    print("=" * 55)
+    print("🎬 Video Streaming Berbayar (PTB + Multi-Bot)")
+    print("=" * 55)
+    os.makedirs(VIDEO_FOLDER, exist_ok=True)
+
+    # Build PTB Application
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Register handlers
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, handle_photo))
+    app.add_handler(MessageHandler(
+        (filters.VIDEO | filters.Document.ALL) & filters.ChatType.PRIVATE,
+        handle_video_document
+    ))
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND,
+        handle_text
+    ))
+
+    # Initialize + start polling (tanpa run_polling yang block)
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling(drop_pending_updates=True)
+
+    me = await app.bot.get_me()
+    print(f"✅ Bot: @{me.username}")
+    logger.info(f"Bot started: @{me.username}")
 
     # Start userbot
     await start_default_userbot()
@@ -61,7 +97,7 @@ async def post_init(application):
     logger.info("Bot fully started and ready.")
     await db.log_activity("bot_started", category="system")
 
-    # Restore active sessions
+    # Restore sessions
     sessions = await db.get_active_sessions()
     for s in sessions:
         remaining = s["end_time"] - time.time()
@@ -73,39 +109,14 @@ async def post_init(application):
     # Start API server
     await start_api_server(API_PORT)
 
-
-def main():
-    from telegram.ext import (
-        ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-        MessageHandler, filters
-    )
-    from ptb_handlers import (
-        cmd_start, handle_callback, handle_photo,
-        handle_video_document, handle_text
-    )
-
-    print("=" * 55)
-    print("🎬 Video Streaming Berbayar (PTB + Multi-Bot)")
-    print("=" * 55)
-    os.makedirs(VIDEO_FOLDER, exist_ok=True)
-
-    app = (
-        ApplicationBuilder()
-        .token(BOT_TOKEN)
-        .post_init(post_init)
-        .build()
-    )
-
-    # Handlers — order matters
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, handle_photo))
-    app.add_handler(MessageHandler((filters.VIDEO | filters.Document.ALL) & filters.ChatType.PRIVATE, handle_video_document))
-    app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, handle_text))
-
-    # Run polling
-    app.run_polling(drop_pending_updates=True)
+    # Keep running forever
+    await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        import traceback
+        print(f"FATAL: {e}")
+        traceback.print_exc()
