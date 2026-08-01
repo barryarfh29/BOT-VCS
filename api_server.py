@@ -519,9 +519,7 @@ async def _read_upload(request, field_name="file"):
 
 
 async def _file_id_via_bot(local_path: str, kind: str):
-    """Kirim media ke DM admin pertama via bot untuk dapat file_id, lalu hapus pesannya.
-    (Pola sama dengan handlers/input.py — Telegram butuh pesan nyata untuk menghasilkan file_id.)
-    """
+    """Kirim media ke DM admin pertama via bot untuk dapat file_id, lalu hapus pesannya."""
     from bot_manager import bot
     admin_ids = await db.get_admin_ids()
     if not admin_ids:
@@ -529,10 +527,19 @@ async def _file_id_via_bot(local_path: str, kind: str):
     target = admin_ids[0]
     if kind == "photo":
         sent = await bot.send_photo(target, photo=local_path)
+        if not sent or not sent.photo:
+            raise RuntimeError(f"Failed to upload photo to Telegram")
         file_id = sent.photo.file_id
     else:
         sent = await bot.send_video(target, video=local_path)
-        file_id = sent.video.file_id if sent.video else sent.document.file_id
+        if not sent:
+            raise RuntimeError(f"Failed to upload video to Telegram")
+        if sent.video:
+            file_id = sent.video.file_id
+        elif sent.document:
+            file_id = sent.document.file_id
+        else:
+            raise RuntimeError(f"Upload succeeded but no file_id in response")
     try:
         await sent.delete()
     except Exception:

@@ -238,32 +238,52 @@ class BotClient:
                          parse_mode: str = "Markdown", reply_markup=None):
         """Send photo (file_id string, BytesIO, or local file path)."""
         markup = self._convert_markup(reply_markup)
-        if isinstance(photo, str) and not os.path.isfile(photo):
-            # file_id
-            r = await _api("sendPhoto", chat_id=chat_id, photo=photo,
-                           caption=caption, parse_mode=parse_mode,
-                           reply_markup=markup)
-        elif isinstance(photo, str) and os.path.isfile(photo):
-            # Local file path
-            with open(photo, "rb") as f:
-                data = {"chat_id": chat_id}
-                if caption:
-                    data["caption"] = caption
-                    data["parse_mode"] = parse_mode
-                if markup:
-                    data["reply_markup"] = markup
-                files = {"photo": (os.path.basename(photo), f, "image/jpeg")}
-                r = await _api_form("sendPhoto", data, files)
-        else:
-            # BytesIO
-            data = {"chat_id": chat_id}
+        if isinstance(photo, str) and os.path.isfile(photo):
+            # Local file upload
+            data = {"chat_id": str(chat_id)}
             if caption:
                 data["caption"] = caption
                 data["parse_mode"] = parse_mode
             if markup:
-                data["reply_markup"] = markup
-            files = {"photo": ("photo.jpg", photo, "image/jpeg")}
-            r = await _api_form("sendPhoto", data, files)
+                data["reply_markup"] = json.dumps(markup)
+
+            form = aiohttp.FormData()
+            for k, v in data.items():
+                form.add_field(k, v)
+            form.add_field('photo', open(photo, 'rb'),
+                           filename=os.path.basename(photo),
+                           content_type='image/jpeg')
+            session = await _get_session()
+            try:
+                async with session.post(f"{API_URL}/sendPhoto", data=form) as resp:
+                    r = await resp.json()
+            except Exception as e:
+                logger.error(f"send_photo upload error: {e}")
+                r = {"ok": False}
+        elif isinstance(photo, str):
+            # file_id
+            r = await _api("sendPhoto", chat_id=chat_id, photo=photo,
+                           caption=caption, parse_mode=parse_mode,
+                           reply_markup=markup)
+        else:
+            # BytesIO
+            data = {"chat_id": str(chat_id)}
+            if caption:
+                data["caption"] = caption
+                data["parse_mode"] = parse_mode
+            if markup:
+                data["reply_markup"] = json.dumps(markup)
+            form = aiohttp.FormData()
+            for k, v in data.items():
+                form.add_field(k, v)
+            form.add_field('photo', photo, filename='photo.jpg', content_type='image/jpeg')
+            session = await _get_session()
+            try:
+                async with session.post(f"{API_URL}/sendPhoto", data=form) as resp:
+                    r = await resp.json()
+            except Exception as e:
+                logger.error(f"send_photo upload error: {e}")
+                r = {"ok": False}
         if r.get("ok"):
             return MessageObj(r["result"], self)
         return None
@@ -272,22 +292,33 @@ class BotClient:
                          parse_mode: str = "Markdown", reply_markup=None):
         """Send video (file_id string or local file path)."""
         markup = self._convert_markup(reply_markup)
-        if isinstance(video, str) and not os.path.isfile(video):
+        if isinstance(video, str) and os.path.isfile(video):
+            # Local file upload
+            data = {"chat_id": str(chat_id)}
+            if caption:
+                data["caption"] = caption
+                data["parse_mode"] = parse_mode
+            if markup:
+                data["reply_markup"] = json.dumps(markup)
+
+            form = aiohttp.FormData()
+            for k, v in data.items():
+                form.add_field(k, v)
+            form.add_field('video', open(video, 'rb'),
+                           filename=os.path.basename(video),
+                           content_type='video/mp4')
+            session = await _get_session()
+            try:
+                async with session.post(f"{API_URL}/sendVideo", data=form) as resp:
+                    r = await resp.json()
+            except Exception as e:
+                logger.error(f"send_video upload error: {e}")
+                r = {"ok": False}
+        elif isinstance(video, str):
             # file_id
             r = await _api("sendVideo", chat_id=chat_id, video=video,
                            caption=caption, parse_mode=parse_mode,
                            reply_markup=markup)
-        elif isinstance(video, str) and os.path.isfile(video):
-            # Local file
-            with open(video, "rb") as f:
-                data = {"chat_id": chat_id}
-                if caption:
-                    data["caption"] = caption
-                    data["parse_mode"] = parse_mode
-                if markup:
-                    data["reply_markup"] = markup
-                files = {"video": (os.path.basename(video), f, "video/mp4")}
-                r = await _api_form("sendVideo", data, files)
         else:
             r = {"ok": False}
         if r.get("ok"):
