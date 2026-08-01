@@ -76,8 +76,9 @@ class BotWrapper:
         """Download file from Telegram."""
         try:
             file = await self._bot.get_file(file_id)
-            await file.download_to_drive(file_name)
-            return file_name
+            dest = file_name or f"/tmp/{file.file_id}"
+            await file.download_to_drive(custom_path=dest)
+            return dest
         except Exception as e:
             logger.error(f"download_media error: {e}")
             return None

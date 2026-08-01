@@ -242,18 +242,30 @@ async def _handle_admin_callback(update, context, data):
         if not talent:
             return
         videos = talent.get("videos", [])
+        pkgs = talent.get("packages") or []
+        pkg_text = "\n".join([f"  {i+1}. {(p.get('label') or '').strip() or f'{p.get(\"duration\",0)}m'} — Rp {int(p.get('price',0)):,}" for i, p in enumerate(pkgs)]) if pkgs else "  (belum ada)"
+        videos_text = "\n".join([f"  {i+1}. {v.get('filename',v) if isinstance(v,dict) else v}" for i, v in enumerate(videos)]) if videos else "  Belum ada"
         text = (f"**{talent['name']}**\n\n"
-                f"Harga: Rp {talent['price']:,} | Durasi: {talent['duration']}m\n"
-                f"Video: {len(videos)} | Status: {'OFFLINE' if talent.get('offline') else 'ONLINE'}")
+                f"Status: {'OFFLINE' if talent.get('offline') else 'ONLINE'}\n"
+                f"Harga: Rp {talent['price']:,} | Durasi: {talent['duration']}m | CD: {talent.get('cooldown',0)}m\n\n"
+                f"**Paket ({len(pkgs)}):**\n{pkg_text}\n\n"
+                f"**Video ({len(videos)}):**\n{videos_text}")
         toggle = "Set ONLINE" if talent.get("offline") else "Set OFFLINE"
         buttons = [
             [InlineKeyboardButton(toggle, callback_data=f"adm_toggle_{talent_id}")],
-            [InlineKeyboardButton("+ Video", callback_data=f"adm_tset_{talent_id}_video"),
-             InlineKeyboardButton("Foto", callback_data=f"adm_tset_{talent_id}_photo")],
+            [InlineKeyboardButton("Set Akun", callback_data=f"adm_tset_{talent_id}_session"),
+             InlineKeyboardButton("+ Video", callback_data=f"adm_tset_{talent_id}_video")],
+            [InlineKeyboardButton("Lihat Video", callback_data=f"adm_vplay_{talent_id}"),
+             InlineKeyboardButton("Hapus Video", callback_data=f"adm_vdel_{talent_id}")],
             [InlineKeyboardButton("Nama", callback_data=f"adm_tset_{talent_id}_name"),
-             InlineKeyboardButton("Harga", callback_data=f"adm_tset_{talent_id}_price")],
-            [InlineKeyboardButton("Durasi", callback_data=f"adm_tset_{talent_id}_duration"),
-             InlineKeyboardButton("Hapus", callback_data=f"adm_tdel_{talent_id}")],
+             InlineKeyboardButton("Desc", callback_data=f"adm_tset_{talent_id}_desc")],
+            [InlineKeyboardButton("Harga", callback_data=f"adm_tset_{talent_id}_price"),
+             InlineKeyboardButton("Durasi", callback_data=f"adm_tset_{talent_id}_duration")],
+            [InlineKeyboardButton("Label Durasi", callback_data=f"adm_tset_{talent_id}_durationlabel"),
+             InlineKeyboardButton("Paket Durasi", callback_data=f"adm_pkg_{talent_id}")],
+            [InlineKeyboardButton("Foto", callback_data=f"adm_tset_{talent_id}_photo"),
+             InlineKeyboardButton("Cooldown", callback_data=f"adm_tset_{talent_id}_cooldown")],
+            [InlineKeyboardButton("Hapus Talent", callback_data=f"adm_tdel_{talent_id}")],
             [InlineKeyboardButton("Kembali", callback_data="adm_talents")],
         ]
         await query.message.edit_text(text, parse_mode=ParseMode.MARKDOWN,

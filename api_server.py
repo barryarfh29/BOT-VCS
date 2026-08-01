@@ -713,7 +713,9 @@ async def _serve_media_from_file_id(file_id: str, cache_name: str):
     os.makedirs(VIDEO_FOLDER, exist_ok=True)
     local_path = os.path.join(VIDEO_FOLDER, cache_name)
     if not os.path.isfile(local_path):
-        await bot.download_media(file_id, file_name=local_path)
+        result = await bot.download_media(file_id, file_name=local_path)
+        if not result:
+            return None
     return local_path if os.path.isfile(local_path) else None
 
 
