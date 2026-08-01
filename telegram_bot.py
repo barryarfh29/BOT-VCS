@@ -436,16 +436,24 @@ class BotClient:
         """Evaluate Pyrogram filter tree recursively."""
         ftype = type(filt).__name__
 
-        # AndFilter (filters.X & filters.Y)
-        if ftype == "AndFilter" or (hasattr(filt, 'base') and hasattr(filt, 'other')):
-            return self._eval_filter(filt.base, msg, raw) and self._eval_filter(filt.other, msg, raw)
-
-        # OrFilter (filters.X | filters.Y)
-        if ftype == "OrFilter" or (hasattr(filt, 'base') and hasattr(filt, 'other') and 'or' in ftype.lower()):
+        # OrFilter (filters.X | filters.Y) — CHECK FIRST before And
+        if ftype == "OrFilter":
             return self._eval_filter(filt.base, msg, raw) or self._eval_filter(filt.other, msg, raw)
 
+        # AndFilter (filters.X & filters.Y)
+        if ftype == "AndFilter":
+            return self._eval_filter(filt.base, msg, raw) and self._eval_filter(filt.other, msg, raw)
+
         # InvertFilter (~filters.X)
-        if ftype == "InvertFilter" or (hasattr(filt, 'base') and not hasattr(filt, 'other')):
+        if ftype == "InvertFilter":
+            return not self._eval_filter(filt.base, msg, raw)
+
+        # Fallback for combined filters with base/other attributes
+        if hasattr(filt, 'base') and hasattr(filt, 'other'):
+            # Default to AND behavior
+            return self._eval_filter(filt.base, msg, raw) and self._eval_filter(filt.other, msg, raw)
+
+        if hasattr(filt, 'base') and not hasattr(filt, 'other'):
             return not self._eval_filter(filt.base, msg, raw)
 
         # Command filter
