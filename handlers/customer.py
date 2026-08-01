@@ -172,6 +172,22 @@ def register_customer_handlers():
                 ])
             )
         else:
+            # Animasi loading sebelum welcome
+            talents_count = len(await db.get_talents())
+            loading_msg = await bot.send_message(message.chat.id, "🔍 Checking available talents...")
+            await asyncio.sleep(0.8)
+            if loading_msg:
+                await loading_msg.edit_text(f"🔍 Checking available talents...\n✅ {talents_count} talents found")
+            await asyncio.sleep(0.6)
+            if loading_msg:
+                await loading_msg.edit_text(f"🔍 Checking available talents...\n✅ {talents_count} talents found\n⏳ Loading menu...")
+            await asyncio.sleep(0.5)
+            if loading_msg:
+                try:
+                    await loading_msg.delete()
+                except Exception:
+                    pass
+
             welcome_id = await send_welcome_menu(client, message.chat.id)
             if not welcome_id:
                 await message.reply_text("No talents available. Please try again later.")
