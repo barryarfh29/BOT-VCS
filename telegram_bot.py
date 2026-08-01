@@ -452,14 +452,22 @@ class BotClient:
     def _match_cb_filter(self, filt, cb: 'CallbackQueryObj') -> bool:
         """Match callback filter (Pyrogram regex pattern)."""
         import re
+        # Pyrogram filters.regex creates object with .pattern attribute
         if hasattr(filt, 'pattern'):
             pattern = filt.pattern
             if isinstance(pattern, str):
                 return bool(re.match(pattern, cb.data))
-            else:
+            elif hasattr(pattern, 'match'):
                 return bool(pattern.match(cb.data))
-        # Fallback
-        return True
+            else:
+                return bool(re.match(str(pattern), cb.data))
+        # Check if it's a combined filter (AndFilter wrapping regex)
+        if hasattr(filt, 'base'):
+            return self._match_cb_filter(filt.base, cb)
+        if hasattr(filt, 'other'):
+            return self._match_cb_filter(filt.other, cb)
+        # No pattern found — DON'T match (safe default)
+        return False
 
     # --- Utility ---
 

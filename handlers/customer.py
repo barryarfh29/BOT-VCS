@@ -143,7 +143,7 @@ def register_customer_handlers():
             return
 
         admin_check = await is_admin(user_id)
-        logger.info(f"user_id={user_id}, is_admin={admin_check}, admin_ids={await db.get_admin_ids()}")
+        logger.info(f"user_id={user_id}, is_admin={admin_check}")
 
         if admin_check:
             await message.reply_text(
@@ -157,6 +157,7 @@ def register_customer_handlers():
             )
         else:
             welcome_id = await send_welcome_menu(client, message.chat.id)
+            logger.info(f"Welcome sent to {user_id}, msg_id={welcome_id}")
             if not welcome_id:
                 await message.reply_text("No talents available. Please try again later.")
 
