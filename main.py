@@ -103,8 +103,19 @@ def main():
     app.add_handler(MessageHandler((filters.VIDEO | filters.Document.ALL) & filters.ChatType.PRIVATE, handle_video_document))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, handle_text))
 
-    # Run polling
-    app.run_polling(drop_pending_updates=True)
+    # Run polling — retry on conflict (container lama mungkin masih hidup sementara)
+    import time as _time
+    max_retries = 10
+    for attempt in range(max_retries):
+        try:
+            app.run_polling(drop_pending_updates=True)
+            break
+        except Exception as e:
+            if "Conflict" in str(e) and attempt < max_retries - 1:
+                print(f"⚠️  409 Conflict (attempt {attempt+1}) — waiting for old container to die...")
+                _time.sleep(10)
+            else:
+                raise
 
 
 if __name__ == "__main__":
