@@ -22,6 +22,27 @@ logger = logging.getLogger(__name__)
 admin_state = {}
 
 
+# ============================================================
+# UI CLEANUP — hapus pesan lama supaya chat selalu bersih
+# ============================================================
+
+async def _clean_ui(chat_id, context):
+    """Hapus semua pesan UI lama yang tercatat di chat ini."""
+    ids = await db.pop_ui_messages(chat_id)
+    for mid in ids:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=mid)
+        except Exception:
+            pass
+
+
+async def _track_ui(chat_id, *msg_ids):
+    """Catat message id UI untuk dihapus pada navigasi berikutnya."""
+    valid = [m for m in msg_ids if m]
+    if valid:
+        await db.track_ui_messages(chat_id, valid)
+
+
 async def _get_bot(context):
     """Get PTB bot instance."""
     return context.bot
@@ -58,6 +79,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     admin_state.pop(user_id, None)
+
+    # Clean previous UI messages
+    await _clean_ui(chat_id, context)
 
     settings = await db.get_settings()
     if not settings.get("admin_ids"):
@@ -143,10 +167,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         markup_dict = {"inline_keyboard": markup_rows}
 
         if clean:
-            await send_template(bot, chat_id, template, markup=markup_dict)
+            welcome_id = await send_template(bot, chat_id, template, markup=markup_dict)
+            await _track_ui(chat_id, welcome_id)
         else:
-            # Template kosong — kirim tombol saja
-            await bot.send_message(chat_id, "ㅤ", reply_markup=markup_dict)
+            msg = await bot.send_message(chat_id, "ㅤ", reply_markup=markup_dict)
+            if msg:
+                await _track_ui(chat_id, getattr(msg, 'message_id', None) or getattr(msg, 'id', None))
 
 
 # ============================================================
@@ -476,17 +502,19 @@ async def _handle_talent_detail(update, context, data):
         buttons = [[InlineKeyboardButton("Order", callback_data=f"order_{talent_id}")]]
     buttons.append([InlineKeyboardButton("Back", callback_data="back_menu")])
 
-    # Delete old message
+    # Delete old message + clean UI
     try:
         await query.message.delete()
     except Exception:
         pass
+    await _clean_ui(chat_id, context)
 
     # Send photo
     chat_id = query.message.chat_id
+    photo_msg = None
     if talent.get("photo"):
         try:
-            await context.bot.send_photo(chat_id=chat_id, photo=talent["photo"])
+            photo_msg = await context.bot.send_photo(chat_id=chat_id, photo=talent["photo"])
         except Exception:
             pass
 
@@ -502,7 +530,7 @@ async def _handle_talent_detail(update, context, data):
         markup_rows.append([{"text": b.text, "callback_data": b.callback_data} for b in row])
     markup_dict = {"inline_keyboard": markup_rows}
 
-    await send_template(
+    detail_id = await send_template(
         bot, chat_id, tpl,
         markup=markup_dict,
         talent_name=talent["name"],
@@ -510,6 +538,9 @@ async def _handle_talent_detail(update, context, data):
         price=price_str,
         duration=duration_display(talent),
     )
+
+    # Track for cleanup
+    await _track_ui(chat_id, photo_msg.message_id if photo_msg else None, detail_id)
 
 
 async def _handle_talent_full(update, context, data):
@@ -542,6 +573,14 @@ async def _handle_subscribe(update, context, data):
 async def _handle_back_menu(update, context):
     """Back to talent selection."""
     query = update.callback_query
+    chat_id = query.message.chat_id
+
+    # Delete current + clean all UI
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    await _clean_ui(chat_id, context)
     talents = await db.get_talents()
     btns = []
     for t in talents:
@@ -556,8 +595,22 @@ async def _handle_back_menu(update, context):
     buttons = [btns[i:i+2] for i in range(0, len(btns), 2)]
     template = await db.get_template("welcome")
     clean = re.sub(r'<[^>]+>', '', template).strip() if template else ""
-    text = clean if clean else "ㅤ"
-    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+    from rich_message import send_template
+    from bot_manager import bot as bot_wrapper
+
+    markup_rows = []
+    for row in buttons:
+        markup_rows.append([{"text": b.text, "callback_data": b.callback_data} for b in row])
+    markup_dict = {"inline_keyboard": markup_rows}
+
+    if clean:
+        welcome_id = await send_template(bot_wrapper, chat_id, template, markup=markup_dict)
+        await _track_ui(chat_id, welcome_id)
+    else:
+        msg = await bot_wrapper.send_message(chat_id, "ㅤ", reply_markup=markup_dict)
+        if msg:
+            await _track_ui(chat_id, getattr(msg, 'message_id', None))
 
 
 async def _handle_order(update, context, data):
@@ -616,6 +669,9 @@ async def _start_order(update, context, talent):
     price = talent["price"]
     duration = talent["duration"]
     merchant_ref = f"S-{user.id}-{talent_id}-{int(time.time())}"
+
+    # Clean previous UI (foto talent, detail, dll)
+    await _clean_ui(chat_id, context)
 
     inv_msg = await context.bot.send_message(chat_id, "**Creating invoice...**", parse_mode=ParseMode.MARKDOWN)
 
