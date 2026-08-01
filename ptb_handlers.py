@@ -243,7 +243,14 @@ async def _handle_admin_callback(update, context, data):
             return
         videos = talent.get("videos", [])
         pkgs = talent.get("packages") or []
-        pkg_text = "\n".join([f"  {i+1}. {(p.get('label') or '').strip() or f'{p.get(\"duration\",0)}m'} — Rp {int(p.get('price',0)):,}" for i, p in enumerate(pkgs)]) if pkgs else "  (belum ada)"
+        if pkgs:
+            pkg_lines = []
+            for i, p in enumerate(pkgs):
+                lbl = (p.get('label') or '').strip() or f"{p.get('duration',0)}m"
+                pkg_lines.append(f"  {i+1}. {lbl} — Rp {int(p.get('price',0)):,}")
+            pkg_text = "\n".join(pkg_lines)
+        else:
+            pkg_text = "  (belum ada)"
         videos_text = "\n".join([f"  {i+1}. {v.get('filename',v) if isinstance(v,dict) else v}" for i, v in enumerate(videos)]) if videos else "  Belum ada"
         text = (f"**{talent['name']}**\n\n"
                 f"Status: {'OFFLINE' if talent.get('offline') else 'ONLINE'}\n"
