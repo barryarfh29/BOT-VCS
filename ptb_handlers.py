@@ -503,6 +503,7 @@ async def _handle_talent_detail(update, context, data):
     buttons.append([InlineKeyboardButton("Back", callback_data="back_menu")])
 
     # Delete old message + clean UI
+    chat_id = query.message.chat_id
     try:
         await query.message.delete()
     except Exception:
@@ -510,7 +511,6 @@ async def _handle_talent_detail(update, context, data):
     await _clean_ui(chat_id, context)
 
     # Send photo
-    chat_id = query.message.chat_id
     photo_msg = None
     if talent.get("photo"):
         try:
