@@ -1,0 +1,6 @@
+*.session
+*.pyc
+__pycache__/
+.env
+bot.log
+.git

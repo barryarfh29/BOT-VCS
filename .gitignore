@@ -1,0 +1,7 @@
+*.session
+*.pyc
+__pycache__/
+.env
+bot.log
+videos/
+database.json
