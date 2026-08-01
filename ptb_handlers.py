@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 # Admin state (shared)
 admin_state = {}
 
+# Payment message tracking: invoice_id -> {chat_id, msg_ids: [qr_msg_id, invoice_msg_id]}
+_payment_msgs = {}
+
 
 # ============================================================
 # UI CLEANUP — hapus pesan lama supaya chat selalu bersih
@@ -740,6 +743,7 @@ async def _start_order(update, context, talent):
     })
 
     # Poll payment in background
+    _payment_msgs[invoice_id] = {"chat_id": chat_id, "msg_ids": [qr_msg.message_id if qr_msg else None, pay_msg_id]}
     asyncio.create_task(_poll_payment(context, user.id, invoice_id, chat_id, talent,
                                      [qr_msg.message_id if qr_msg else None, pay_msg_id]))
 
@@ -839,11 +843,41 @@ async def _handle_check_payment(update, context, data):
 async def _handle_cancel_payment(update, context, data):
     query = update.callback_query
     iid = data.replace("cnl_", "")
+    chat_id = query.message.chat_id
     await db.update_transaction(iid, status="CANCELLED")
+
+    # Hapus semua pesan invoice (QR + invoice text)
+    info = _payment_msgs.pop(iid, None)
+    if info:
+        for mid in info.get("msg_ids", []):
+            if mid:
+                try:
+                    await context.bot.delete_message(chat_id, mid)
+                except Exception:
+                    pass
+    # Hapus pesan yang punya tombol cancel juga
     try:
         await query.message.delete()
     except Exception:
         pass
+
+    # Kembali ke menu talent
+    await query.answer("Order cancelled")
+    from rich_message import send_template
+    from bot_manager import bot as bot_wrapper
+    template = await db.get_template("welcome")
+    clean = re.sub(r'<[^>]+>', '', template).strip() if template else ""
+    talents = await db.get_talents()
+    btns = []
+    for t in talents:
+        tid = t["id"]
+        btns.append(InlineKeyboardButton(f"{t['name']}", callback_data=f"talent_{tid}"))
+    buttons = [btns[i:i+2] for i in range(0, len(btns), 2)]
+    markup_dict = {"inline_keyboard": [[{"text": b.text, "callback_data": b.callback_data} for b in row] for row in buttons]}
+    if clean:
+        await send_template(bot_wrapper, chat_id, template, markup=markup_dict)
+    else:
+        await bot_wrapper.send_message(chat_id, "ㅤ", reply_markup=markup_dict)
 
 
 async def _handle_refresh_session(update, context):
