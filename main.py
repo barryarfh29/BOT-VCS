@@ -44,8 +44,8 @@ logging.basicConfig(
     ]
 )
 # Suppress noisy loggers
-logging.getLogger("pyrogram").setLevel(logging.WARNING)
-logging.getLogger("pytgcalls").setLevel(logging.WARNING)
+logging.getLogger("pyrogram").setLevel(logging.ERROR)
+logging.getLogger("pytgcalls").setLevel(logging.ERROR)
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
