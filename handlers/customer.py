@@ -172,27 +172,29 @@ def register_customer_handlers():
                 ])
             )
         else:
-            # Animasi loading sebelum welcome (template dari database, editable via web)
-            import re
-            def _strip_html(text):
-                return re.sub(r'<[^>]+>', '', text).strip()
-
+            # Animasi loading sebelum welcome (template dari database, editable via web, support rich)
             talents_count = len(await db.get_talents())
-            tpl1 = _strip_html((await db.get_template("loading_1")).replace("{count}", str(talents_count)))
-            tpl2 = _strip_html((await db.get_template("loading_2")).replace("{count}", str(talents_count)))
-            tpl3 = _strip_html((await db.get_template("loading_3")).replace("{count}", str(talents_count)))
 
-            loading_msg = await bot.send_message(message.chat.id, tpl1)
+            loading_msg_id = await send_template(
+                client, message.chat.id,
+                await db.get_template("loading_1"),
+                count=str(talents_count),
+            )
             await asyncio.sleep(0.8)
-            if loading_msg:
-                await loading_msg.edit_text(tpl2)
+            # Edit ke step 2
+            tpl2 = render_template(await db.get_template("loading_2"), count=str(talents_count))
+            if loading_msg_id:
+                await bot.edit_message_text(message.chat.id, loading_msg_id, tpl2, parse_mode="HTML")
             await asyncio.sleep(0.6)
-            if loading_msg:
-                await loading_msg.edit_text(tpl3)
+            # Edit ke step 3
+            tpl3 = render_template(await db.get_template("loading_3"), count=str(talents_count))
+            if loading_msg_id:
+                await bot.edit_message_text(message.chat.id, loading_msg_id, tpl3, parse_mode="HTML")
             await asyncio.sleep(0.5)
-            if loading_msg:
+            # Hapus loading
+            if loading_msg_id:
                 try:
-                    await loading_msg.delete()
+                    await bot.delete_messages(message.chat.id, loading_msg_id)
                 except Exception:
                     pass
 
