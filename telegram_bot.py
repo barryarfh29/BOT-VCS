@@ -407,15 +407,17 @@ class BotClient:
         """Route update to registered handlers."""
         if "message" in update:
             msg = MessageObj(update["message"], self)
-            for filt, handler in self._handlers_message:
+            matched = False
+            for i, (filt, handler) in enumerate(self._handlers_message):
                 if filt is None or self._match_filter(filt, msg, update["message"]):
                     try:
                         await handler(self, msg)
                     except Exception as e:
                         logger.error(f"Handler error: {e}", exc_info=True)
+                    matched = True
                     return
             # No handler matched
-            keys = list(update['message'].keys())
+            keys = [k for k in update['message'].keys() if k not in ('from', 'chat', 'date', 'message_id')]
             logger.info(f"No handler match: keys={keys}, chat_type={update['message'].get('chat',{}).get('type')}")
 
         elif "callback_query" in update:
@@ -431,8 +433,10 @@ class BotClient:
     def _match_filter(self, filt, msg: 'MessageObj', raw: dict) -> bool:
         """Match Pyrogram-style filter against message."""
         try:
-            return self._eval_filter(filt, msg, raw)
-        except Exception:
+            result = self._eval_filter(filt, msg, raw)
+            return result
+        except Exception as e:
+            logger.error(f"Filter eval error: {e} (filter={type(filt).__name__}, msg_keys={list(raw.keys())})")
             return False
 
     def _eval_filter(self, filt, msg: 'MessageObj', raw: dict) -> bool:
