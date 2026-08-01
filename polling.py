@@ -18,7 +18,7 @@ async def start_polling(bot_client):
     """Long-polling loop. Dispatch updates ke bot_client.dispatch_update()."""
     offset = 0
     retry_delay = 1
-    logger.info("HTTP polling started — waiting for messages...")
+    logger.info("HTTP polling started")
 
     async with aiohttp.ClientSession() as session:
         while True:
@@ -28,9 +28,12 @@ async def start_polling(bot_client):
                     data = await resp.json()
 
                 if not data.get("ok"):
-                    err = data.get("description", "unknown")
                     code = data.get("error_code", 0)
-                    logger.warning(f"getUpdates error ({code}): {err}")
+                    # 409 = container lama masih hidup sementara, self-resolving — jangan spam log
+                    if code == 409:
+                        await asyncio.sleep(3)
+                        continue
+                    logger.error(f"getUpdates error ({code}): {data.get('description', '')}")
                     await asyncio.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, 30)
                     continue
@@ -43,10 +46,9 @@ async def start_polling(bot_client):
                     try:
                         await bot_client.dispatch_update(update)
                     except Exception as e:
-                        logger.error(f"Dispatch error: {e}", exc_info=True)
+                        logger.error(f"Handler error: {e}", exc_info=True)
 
             except asyncio.CancelledError:
-                logger.info("Polling stopped")
                 break
             except asyncio.TimeoutError:
                 continue

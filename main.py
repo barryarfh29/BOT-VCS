@@ -43,6 +43,10 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+# Suppress noisy loggers
+logging.getLogger("pyrogram").setLevel(logging.WARNING)
+logging.getLogger("pytgcalls").setLevel(logging.WARNING)
+logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 

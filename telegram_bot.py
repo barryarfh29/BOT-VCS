@@ -33,13 +33,15 @@ async def _get_session() -> aiohttp.ClientSession:
 async def _api(method: str, **kwargs) -> dict:
     """Call Telegram Bot API."""
     session = await _get_session()
-    # Remove None values
     params = {k: v for k, v in kwargs.items() if v is not None}
     try:
         async with session.post(f"{API_URL}/{method}", json=params) as resp:
             data = await resp.json()
             if not data.get("ok"):
-                logger.warning(f"Bot API {method} failed: {data.get('description', '')}")
+                desc = data.get("description", "")
+                # Jangan log "message is not modified" — itu normal
+                if "not modified" not in desc:
+                    logger.debug(f"Bot API {method}: {desc}")
             return data
     except Exception as e:
         logger.error(f"Bot API {method} error: {e}")
@@ -62,10 +64,10 @@ async def _api_form(method: str, data: dict, files: dict) -> dict:
         async with session.post(f"{API_URL}/{method}", data=form) as resp:
             data = await resp.json()
             if not data.get("ok"):
-                logger.warning(f"Bot API form {method} failed: {data.get('description', '')}")
+                logger.error(f"Bot API {method} upload failed: {data.get('description', '')}")
             return data
     except Exception as e:
-        logger.error(f"Bot API form {method} error: {e}")
+        logger.error(f"Bot API {method} upload error: {e}")
         return {"ok": False}
 
 
@@ -495,7 +497,6 @@ class BotClient:
             pass
 
         # Unknown filter — don't match
-        logger.warning(f"Unknown callback filter type: {type(filt).__name__}, attrs: {dir(filt)[:10]}")
         return False
 
     # --- Utility ---
