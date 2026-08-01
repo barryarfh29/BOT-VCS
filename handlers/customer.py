@@ -119,8 +119,8 @@ async def send_welcome_menu(client, chat_id):
             client, chat_id, template, markup=markup,
         )
     else:
-        # Template kosong → kirim tombol saja dengan teks minimal
-        msg = await bot.send_message(chat_id, "⬇️", reply_markup=bot._convert_markup(markup))
+        # Template kosong → kirim tombol saja dengan teks minimal (wajib Telegram)
+        msg = await bot.send_message(chat_id, "ㅤ", reply_markup=bot._convert_markup(markup))
         welcome_id = msg.id if msg else None
 
     await track_ui(chat_id, welcome_id)
