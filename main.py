@@ -61,6 +61,11 @@ async def main():
 
     # Start bot (HTTP API — hanya getMe, tidak polling via MTProto)
     await bot.start()
+
+    # Flush pending updates + hapus webhook (antisipasi conflict)
+    from telegram_bot import _api
+    await _api("deleteWebhook", drop_pending_updates=True)
+
     me_bot = await bot.get_me()
     print(f"✅ Bot: @{me_bot.username}")
     logger.info(f"Bot started: @{me_bot.username}")

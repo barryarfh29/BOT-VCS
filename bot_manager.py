@@ -46,7 +46,7 @@ async def start_default_userbot():
         return False
 
     try:
-        userbot = Client("default_userbot", api_id=API_ID, api_hash=API_HASH, session_string=session_string)
+        userbot = Client("default_userbot", api_id=API_ID, api_hash=API_HASH, session_string=session_string, no_updates=True, workdir="/tmp")
         await userbot.start()
         call = PyTgCalls(userbot)
         await call.start()
@@ -68,7 +68,9 @@ async def start_talent_bot(talent_id: str, session_string: str):
             f"talent_{talent_id}",
             api_id=API_ID,
             api_hash=API_HASH,
-            session_string=session_string
+            session_string=session_string,
+            no_updates=True,
+            workdir="/tmp",
         )
         await c.start()
         tc = PyTgCalls(c)
