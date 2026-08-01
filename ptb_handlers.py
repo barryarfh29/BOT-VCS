@@ -759,9 +759,16 @@ async def _poll_payment(context, user_id, invoice_id, chat_id, talent, msg_ids):
                         except Exception:
                             pass
                 # Proceed to session
-                await context.bot.send_message(chat_id,
-                    f"**Connecting to {talent['name']}...**", parse_mode=ParseMode.MARKDOWN)
+                from rich_message import send_template
+                from bot_manager import bot as bot_wrapper
+                tpl_connecting = await db.get_template("connecting")
+                connecting_id = await send_template(bot_wrapper, chat_id, tpl_connecting, talent_name=talent["name"])
                 await asyncio.sleep(3)
+                if connecting_id:
+                    try:
+                        await context.bot.delete_message(chat_id, connecting_id)
+                    except Exception:
+                        pass
                 await start_session(user_id, invoice_id, chat_id, talent)
                 return
             elif status in ["EXPIRED", "CANCELLED"]:

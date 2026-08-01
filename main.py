@@ -30,7 +30,8 @@ logging.basicConfig(
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
 logging.getLogger("pytgcalls").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("telegram.ext").setLevel(logging.WARNING)
+logging.getLogger("telegram.ext").setLevel(logging.ERROR)
+logging.getLogger("telegram.ext.Updater").setLevel(logging.CRITICAL)
 
 logger = logging.getLogger(__name__)
 
