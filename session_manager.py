@@ -38,8 +38,13 @@ def _parse_cooldown(value) -> float:
         return 0
 
 
-def _video_stream(video_path: str) -> MediaStream:
-    """Stream video TANPA audio — talent selalu tampil mute di live stream."""
+def _video_stream(video_path: str, with_audio: bool = False) -> MediaStream:
+    """Stream video. with_audio=True untuk video yang ada suara."""
+    if with_audio:
+        return MediaStream(
+            video_path,
+            video_parameters=VideoQuality.FHD_1080p,
+        )
     return MediaStream(
         video_path,
         video_parameters=VideoQuality.FHD_1080p,
@@ -208,9 +213,11 @@ async def wait_for_join(session: dict):
     video_data = session.get("video_data")
     video_path = None
     clip_seconds = None
+    with_audio = False
     if video_data:
         if isinstance(video_data, dict):
             clip_seconds = video_data.get("clip_seconds")
+            with_audio = bool(video_data.get("with_audio", False))
             filename = video_data.get("filename", f"video_{slot_chat_id}.mp4")
             video_path = os.path.join(VIDEO_FOLDER, filename)
             if video_data.get("file_id") and not os.path.isfile(video_path):
@@ -308,8 +315,8 @@ async def wait_for_join(session: dict):
     # User sudah naik ke video chat! Putar video + timer mulai SEKARANG
     if video_path:
         try:
-            await t_call.play(slot_chat_id, _video_stream(video_path))
-            logger.info(f"Video playing in {slot_chat_id}")
+            await t_call.play(slot_chat_id, _video_stream(video_path, with_audio))
+            logger.info(f"Video playing in {slot_chat_id} (audio={'on' if with_audio else 'off'})")
         except Exception as e:
             logger.error(f"Play failed: {e}")
 
@@ -334,7 +341,7 @@ async def wait_for_join(session: dict):
 
     # Start video loop
     if video_path:
-        task = asyncio.create_task(video_loop(slot_chat_id, video_path, talent_id, session, clip_seconds))
+        task = asyncio.create_task(video_loop(slot_chat_id, video_path, talent_id, session, clip_seconds, with_audio))
         loop_tasks[slot_chat_id] = task
 
 
@@ -487,7 +494,7 @@ async def delayed_play(session: dict):
     loop_tasks[slot_chat_id] = task
 
 
-async def video_loop(slot_chat_id: int, video_path: str, talent_id: str, session: dict, clip_seconds=None):
+async def video_loop(slot_chat_id: int, video_path: str, talent_id: str, session: dict, clip_seconds=None, with_audio: bool = False):
     """Loop video until session ends. Re-play when video finishes.
 
     clip_seconds: kalau di-set, video di-replay tiap N detik (trim Opsi A —
@@ -527,7 +534,7 @@ async def video_loop(slot_chat_id: int, video_path: str, talent_id: str, session
             # Re-play video
             t_userbot, t_call = await get_talent_bot(talent_id)
             try:
-                await t_call.play(slot_chat_id, _video_stream(video_path))
+                await t_call.play(slot_chat_id, _video_stream(video_path, with_audio))
                 logger.info(f"Video loop replay: {video_path} in {slot_chat_id}")
             except Exception as e:
                 logger.error(f"Video loop replay failed: {e}")

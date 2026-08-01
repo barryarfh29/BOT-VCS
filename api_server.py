@@ -127,6 +127,7 @@ def _talent_detail_json(t: dict) -> dict:
                 "title": v.get("title", ""),
                 "length_seconds": v.get("length_seconds"),
                 "clip_seconds": v.get("clip_seconds"),
+                "with_audio": v.get("with_audio", False),
             })
         else:
             videos.append({"index": i, "filename": str(v), "title": "", "length_seconds": None, "clip_seconds": None})
@@ -676,6 +677,8 @@ async def update_video_clip(request):
         fields["clip_seconds"] = clip
     if "title" in body:
         fields["title"] = str(body.get("title", "")).strip()
+    if "with_audio" in body:
+        fields["with_audio"] = bool(body.get("with_audio", False))
 
     if not fields:
         return web.json_response({"error": "No fields"}, status=400)
