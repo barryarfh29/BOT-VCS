@@ -97,13 +97,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
     else:
-        # Loading animation
+        # Loading animation (support HTML formatting from template)
+        from rich_message import render_template
         talents = await db.get_talents()
         count = len(talents)
-        tpl1 = (await db.get_template("loading_1")).replace("{count}", str(count))
-        # Strip HTML tags for plain text
-        tpl1 = re.sub(r'<[^>]+>', '', tpl1).strip() or "🔍 Loading..."
-        loading = await update.message.reply_text(tpl1)
+        tpl1_raw = (await db.get_template("loading_1")).replace("{count}", str(count))
+        tpl1_html = render_template(tpl1_raw, count=str(count))
+        loading = await update.message.reply_text(tpl1_html or "🔍 Loading...", parse_mode=ParseMode.HTML)
         await asyncio.sleep(1)
 
         if not talents:
