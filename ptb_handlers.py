@@ -786,7 +786,7 @@ async def _start_order(update, context, talent):
 
     invoice_id = invoice["invoice_id"]
     total = invoice["total_amount"]
-    nominal = f"{total:,} IDR / {total/myr_rate:.2f} MYR"
+    nominal = await format_price(total, user.id)
 
     import base64
     from io import BytesIO
