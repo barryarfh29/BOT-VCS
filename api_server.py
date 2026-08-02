@@ -1042,6 +1042,222 @@ async def get_frontend_config(request):
     })
 
 
+# ============================================================
+# BROADCAST API
+# ============================================================
+
+async def api_broadcast(request):
+    """POST /api/broadcast — send broadcast to all users from web admin."""
+    token = request.headers.get("Authorization", "")
+    if not await verify_admin(token):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    body = await request.json()
+    text = body.get("text", "").strip()
+    msg_type = body.get("type", "text")  # text, photo, video
+
+    if not text and msg_type == "text":
+        return web.json_response({"error": "Text is required"}, status=400)
+
+    # For photo/video from web, we expect file_id (already uploaded to Telegram)
+    photo_id = body.get("photo_id", "").strip() or None
+    video_id = body.get("video_id", "").strip() or None
+
+    user_ids = await db.get_all_user_ids()
+    total = len(user_ids)
+
+    if total == 0:
+        return web.json_response({"error": "No users registered"}, status=400)
+
+    # Execute broadcast in background
+    import asyncio as _asyncio
+    _asyncio.create_task(_api_broadcast_task(user_ids, text, photo_id, video_id))
+
+    return web.json_response({
+        "ok": True,
+        "message": f"Broadcast started to {total} users",
+        "total": total,
+    })
+
+
+async def _api_broadcast_task(user_ids: list, text: str, photo_id: str = None, video_id: str = None):
+    """Background task to send broadcast from web API."""
+    from bot_manager import bot as bot_wrapper
+
+    success = 0
+    failed = 0
+    blocked = 0
+    total = len(user_ids)
+
+    for uid in user_ids:
+        try:
+            if photo_id:
+                await bot_wrapper.send_photo(uid, photo=photo_id, caption=text)
+            elif video_id:
+                await bot_wrapper.send_video(uid, video=video_id, caption=text)
+            elif text:
+                await bot_wrapper.send_message(uid, text)
+            success += 1
+        except Exception as e:
+            err_str = str(e).lower()
+            if "blocked" in err_str or "deactivated" in err_str or "not found" in err_str:
+                blocked += 1
+            else:
+                failed += 1
+
+        await asyncio.sleep(0.05)
+
+    # Save history
+    await db.save_broadcast({
+        "admin_id": 0,  # from web
+        "type": "photo" if photo_id else ("video" if video_id else "text"),
+        "content": text or "",
+        "total": total,
+        "success": success,
+        "blocked": blocked,
+        "failed": failed,
+        "created_at": time.time(),
+    })
+    await db.log_activity("broadcast_sent", category="admin",
+                          details={"total": total, "success": success, "blocked": blocked, "failed": failed, "via": "web"})
+
+
+async def api_get_broadcasts(request):
+    """GET /api/broadcasts — get broadcast history."""
+    token = request.headers.get("Authorization", "")
+    if not await verify_admin(token):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    try:
+        limit = min(int(request.query.get("limit", 20)), 100)
+    except (ValueError, TypeError):
+        limit = 20
+
+    broadcasts = await db.get_broadcasts(limit)
+    result = []
+    for b in broadcasts:
+        result.append({
+            "type": b.get("type", "text"),
+            "content": b.get("content", "")[:200],  # truncate for list view
+            "total": b.get("total", 0),
+            "success": b.get("success", 0),
+            "blocked": b.get("blocked", 0),
+            "failed": b.get("failed", 0),
+            "created_at": b.get("created_at", 0),
+        })
+    return web.json_response(result)
+
+
+# ============================================================
+# PROMO CODES API
+# ============================================================
+
+async def api_get_promos(request):
+    """GET /api/promos — list all promo codes."""
+    token = request.headers.get("Authorization", "")
+    if not await verify_admin(token):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    promos = await db.get_all_promos()
+    result = []
+    for p in promos:
+        result.append({
+            "code": p.get("code"),
+            "discount_type": p.get("discount_type"),
+            "discount_value": p.get("discount_value"),
+            "max_uses": p.get("max_uses", 0),
+            "used_count": p.get("used_count", 0),
+            "talent_ids": p.get("talent_ids", []),
+            "created_by": p.get("created_by", ""),
+            "active": p.get("active", True),
+            "created_at": p.get("created_at", 0),
+        })
+    return web.json_response(result)
+
+
+async def api_create_promo(request):
+    """POST /api/promos — create a promo code."""
+    token = request.headers.get("Authorization", "")
+    if not await verify_admin(token):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    body = await request.json()
+    code = str(body.get("code", "")).strip().upper()
+    if not code:
+        return web.json_response({"error": "Code is required"}, status=400)
+
+    # Check duplicate
+    existing = await db.get_promo(code)
+    if existing:
+        return web.json_response({"error": "Code already exists"}, status=400)
+
+    discount_type = body.get("discount_type", "percent")
+    if discount_type not in ("percent", "fixed"):
+        return web.json_response({"error": "discount_type must be 'percent' or 'fixed'"}, status=400)
+
+    try:
+        discount_value = float(body.get("discount_value", 0))
+        if discount_value <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid discount_value"}, status=400)
+
+    if discount_type == "percent" and discount_value > 100:
+        return web.json_response({"error": "Percent discount cannot exceed 100"}, status=400)
+
+    try:
+        max_uses = int(body.get("max_uses", 0))
+    except (ValueError, TypeError):
+        max_uses = 0
+
+    created_by = str(body.get("created_by", "")).strip()
+
+    # talent_ids: [] = semua talent, ["t_123", "t_456"] = talent tertentu
+    talent_ids = body.get("talent_ids", [])
+    if not isinstance(talent_ids, list):
+        talent_ids = []
+    talent_ids = [str(t).strip() for t in talent_ids if t]
+
+    promo = await db.create_promo({
+        "code": code,
+        "discount_type": discount_type,
+        "discount_value": discount_value,
+        "max_uses": max_uses,
+        "talent_ids": talent_ids,
+        "created_by": created_by,
+    })
+
+    await db.log_activity("promo_created", category="admin", details={"code": code, "via": "web"})
+
+    return web.json_response({
+        "code": promo["code"],
+        "discount_type": promo["discount_type"],
+        "discount_value": promo["discount_value"],
+        "max_uses": promo["max_uses"],
+        "used_count": promo["used_count"],
+        "talent_ids": promo.get("talent_ids", []),
+        "created_by": promo.get("created_by", ""),
+        "active": promo["active"],
+        "created_at": promo["created_at"],
+    })
+
+
+async def api_delete_promo(request):
+    """DELETE /api/promos/{code} — delete a promo code."""
+    token = request.headers.get("Authorization", "")
+    if not await verify_admin(token):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    code = request.match_info["code"].upper()
+    existing = await db.get_promo(code)
+    if not existing:
+        return web.json_response({"error": "Not found"}, status=404)
+
+    await db.delete_promo(code)
+    await db.log_activity("promo_deleted", category="admin", details={"code": code, "via": "web"})
+    return web.json_response({"ok": True})
+
+
 async def start_api_server(port=None):
     if port is None:
         port = API_PORT
@@ -1078,6 +1294,11 @@ async def start_api_server(port=None):
     app.router.add_put("/api/settings", update_settings)
     app.router.add_get("/api/transactions", get_transactions)
     app.router.add_get("/api/activities", get_activities)
+    app.router.add_post("/api/broadcast", api_broadcast)
+    app.router.add_get("/api/broadcasts", api_get_broadcasts)
+    app.router.add_get("/api/promos", api_get_promos)
+    app.router.add_post("/api/promos", api_create_promo)
+    app.router.add_delete("/api/promos/{code}", api_delete_promo)
 
     runner = web.AppRunner(app)
     await runner.setup()

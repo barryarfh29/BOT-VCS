@@ -328,6 +328,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_subscribe(update, context, data)
     elif data.startswith("skip_bukti_"):
         await _handle_skip_bukti(update, context, data)
+    elif data == "promo_skip":
+        await _handle_promo_skip(update, context)
     elif data == "refresh_session":
         await _handle_refresh_session(update, context)
 
@@ -775,11 +777,7 @@ async def _handle_pkg_order(update, context, data):
 
 
 async def _start_order(update, context, talent):
-    """Create invoice and start payment polling."""
-    from payment import create_invoice, check_invoice
-    from currency import get_myr_rate
-    from session_manager import start_session
-
+    """Start order — show promo code prompt first, then create invoice."""
     query = update.callback_query
     user = query.from_user
     chat_id = query.message.chat_id
@@ -792,20 +790,53 @@ async def _start_order(update, context, talent):
     if existing:
         return
 
-    myr_rate = await get_myr_rate()
-    price = talent["price"]
-    duration = talent["duration"]
-    merchant_ref = f"S-{user.id}-{talent_id}-{int(time.time())}"
-
     # Clean previous UI (foto talent, detail, dll)
     await _clean_ui(chat_id, context)
+
+    # Simpan state order — tunggu promo input atau skip
+    admin_state[user.id] = {
+        "action": "promo_input",
+        "talent": talent,
+        "chat_id": chat_id,
+    }
+
+    await context.bot.send_message(
+        chat_id,
+        "🎟 **Punya promo code?**\nKirim kode sekarang atau klik Skip.",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Skip ▶️", callback_data="promo_skip")]
+        ])
+    )
+
+
+async def _proceed_order(context, user_id: int, chat_id: int, talent: dict, promo: dict = None):
+    """Create invoice and start payment polling (after promo step)."""
+    from payment import create_invoice, check_invoice
+    from currency import get_myr_rate
+    from session_manager import start_session
+
+    talent_id = talent.get("id")
+    price = talent["price"]
+    duration = talent["duration"]
+
+    # Apply promo discount
+    original_price = price
+    if promo:
+        if promo["discount_type"] == "percent":
+            price = int(price * (100 - promo["discount_value"]) / 100)
+        else:
+            price = max(0, int(price - promo["discount_value"]))
+
+    myr_rate = await get_myr_rate()
+    merchant_ref = f"S-{user_id}-{talent_id}-{int(time.time())}"
 
     inv_msg = await context.bot.send_message(chat_id, "**Creating invoice...**", parse_mode=ParseMode.MARKDOWN)
 
     invoice = await create_invoice(
         amount=price, merchant_ref=merchant_ref,
         description=f"{talent['name']} {duration}m",
-        customer_name=user.first_name or "User", expired_time=3600
+        customer_name="User", expired_time=3600
     )
     if not invoice:
         await inv_msg.edit_text("Failed to create invoice.")
@@ -813,7 +844,7 @@ async def _start_order(update, context, talent):
 
     invoice_id = invoice["invoice_id"]
     total = invoice["total_amount"]
-    nominal = await format_price(total, user.id)
+    nominal = await format_price(total, user_id)
 
     import base64
     from io import BytesIO
@@ -838,6 +869,12 @@ async def _start_order(update, context, talent):
         {"text": "Check", "callback_data": f"chk_{invoice_id}"},
         {"text": "Cancel", "callback_data": f"cnl_{invoice_id}"}
     ]]}
+
+    # Tambahkan info diskon di nominal kalau pakai promo
+    if promo and original_price != price:
+        original_nominal = await format_price(original_price, user_id)
+        nominal = f"~{original_nominal}~ → {nominal} (🎟 {promo['code']})"
+
     pay_msg_id = await send_template(
         bot_wrapper, chat_id, tpl,
         markup=markup_dict,
@@ -848,14 +885,20 @@ async def _start_order(update, context, talent):
 
     await db.add_transaction({
         "invoice_id": invoice_id, "merchant_ref": merchant_ref,
-        "user_id": user.id, "user_name": user.first_name,
-        "amount": price, "total_amount": total,
-        "talent": talent["name"], "status": "PENDING", "created_at": time.time()
+        "user_id": user_id, "user_name": "User",
+        "amount": price, "original_amount": original_price,
+        "total_amount": total,
+        "talent": talent["name"], "status": "PENDING", "created_at": time.time(),
+        "promo_code": promo["code"] if promo else None,
     })
+
+    # Increment promo usage
+    if promo:
+        await db.use_promo(promo["code"])
 
     # Poll payment in background
     _payment_msgs[invoice_id] = {"chat_id": chat_id, "msg_ids": [qr_msg.message_id if qr_msg else None, pay_msg_id]}
-    asyncio.create_task(_poll_payment(context, user.id, invoice_id, chat_id, talent,
+    asyncio.create_task(_poll_payment(context, user_id, invoice_id, chat_id, talent,
                                      [qr_msg.message_id if qr_msg else None, pay_msg_id]))
 
 
@@ -1038,6 +1081,25 @@ async def _handle_skip_bukti(update, context, data):
     await query.answer()
 
 
+async def _handle_promo_skip(update, context):
+    """User skips promo code — proceed to invoice without discount."""
+    query = update.callback_query
+    uid = query.from_user.id
+
+    if uid not in admin_state or admin_state[uid].get("action") != "promo_input":
+        await query.answer()
+        return
+
+    state = admin_state.pop(uid)
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+    await _proceed_order(context, uid, state["chat_id"], state["talent"], promo=None)
+    await query.answer()
+
+
 # ============================================================
 # PHOTO HANDLER
 # ============================================================
@@ -1110,6 +1172,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = admin_state[user_id]
 
+    # Broadcast photo
+    if state.get("action") == "broadcast_content":
+        del admin_state[user_id]
+        photo_id = message.photo[-1].file_id
+        caption = message.caption or ""
+        asyncio.create_task(_execute_broadcast(context, user_id, message.chat_id,
+                                              photo_id=photo_id, caption=caption))
+        return
+
     if state.get("action") == "add_talent" and state.get("step") == "photo":
         state["photo"] = message.photo[-1].file_id
         state["step"] = "name"
@@ -1136,7 +1207,7 @@ async def handle_video_document(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     state = admin_state[user_id]
-    if state.get("action") not in ["edit_video", "add_talent"]:
+    if state.get("action") not in ["edit_video", "add_talent", "broadcast_content"]:
         return
 
     # Get file info
@@ -1149,6 +1220,14 @@ async def handle_video_document(update: Update, context: ContextTypes.DEFAULT_TY
         filename = message.document.file_name or f"video_{int(time.time())}.mp4"
         length_seconds = None
     else:
+        return
+
+    # Broadcast video
+    if state["action"] == "broadcast_content":
+        del admin_state[user_id]
+        caption = message.caption or ""
+        asyncio.create_task(_execute_broadcast(context, user_id, message.chat_id,
+                                              video_id=file_id, caption=caption))
         return
 
     if state["action"] == "edit_video":
@@ -1186,13 +1265,63 @@ async def handle_video_document(update: Update, context: ContextTypes.DEFAULT_TY
 # ============================================================
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text input for admin actions (set price, name, etc)."""
+    """Handle text input for admin actions (set price, name, etc) and promo code input."""
     user_id = update.effective_user.id
     message = update.message
     text = message.text.strip()
 
     if user_id not in admin_state:
         return
+
+    state = admin_state[user_id]
+    action = state.get("action")
+
+    # Promo code input (customer or admin)
+    if action == "promo_input":
+        code = text.upper()
+        promo = await db.get_promo(code)
+
+        if not promo or not promo.get("active", True):
+            await message.reply_text(
+                "❌ Code tidak valid. Kirim lagi atau klik Skip.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Skip ▶️", callback_data="promo_skip")]])
+            )
+            return
+
+        # Check max uses
+        if promo.get("max_uses", 0) > 0 and promo.get("used_count", 0) >= promo["max_uses"]:
+            await message.reply_text(
+                "❌ Code sudah habis masa pakai. Kirim lagi atau klik Skip.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Skip ▶️", callback_data="promo_skip")]])
+            )
+            return
+
+        # Check talent restriction
+        talent_ids = promo.get("talent_ids", [])
+        talent_id = state["talent"].get("id")
+        if talent_ids and talent_id not in talent_ids:
+            await message.reply_text(
+                "❌ Code ini tidak berlaku untuk talent ini. Kirim lagi atau klik Skip.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Skip ▶️", callback_data="promo_skip")]])
+            )
+            return
+
+        # Valid promo — proceed with discount
+        chat_id = state["chat_id"]
+        talent = state["talent"]
+        del admin_state[user_id]
+
+        # Show confirmation
+        if promo["discount_type"] == "percent":
+            disc_text = f"{int(promo['discount_value'])}%"
+        else:
+            disc_text = f"Rp {int(promo['discount_value']):,}"
+        await message.reply_text(f"✅ Promo **{code}** applied! Diskon: {disc_text}", parse_mode=ParseMode.MARKDOWN)
+        await asyncio.sleep(1)
+
+        await _proceed_order(context, user_id, chat_id, talent, promo=promo)
+        return
+
     if not await is_admin(user_id):
         admin_state.pop(user_id, None)
         return
@@ -1268,3 +1397,205 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del admin_state[user_id]
         await message.reply_text(f"Admin ditambahkan: `{text}`", parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="adm_setting")]]))
+
+    # Broadcast — admin mengirim konten broadcast
+    elif action == "broadcast_content":
+        # Text-only broadcast
+        del admin_state[user_id]
+        asyncio.create_task(_execute_broadcast(context, user_id, message.chat_id, text=text))
+
+
+# ============================================================
+# BROADCAST FEATURE
+# ============================================================
+
+async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /broadcast command (admin only).
+    
+    Usage:
+    - /broadcast (reply ke pesan) → langsung broadcast pesan yang di-reply
+    - /broadcast (tanpa reply) → masuk mode input, kirim konten berikutnya
+    """
+    user_id = update.effective_user.id
+    if not await is_admin(user_id):
+        return
+
+    message = update.message
+    chat_id = message.chat_id
+
+    # Kalau reply ke pesan → langsung broadcast pesan itu via copy_message
+    if message.reply_to_message:
+        reply_msg = message.reply_to_message
+        asyncio.create_task(_execute_broadcast_copy(
+            context, user_id, chat_id, reply_msg.chat_id, reply_msg.message_id
+        ))
+        return
+
+    # Tanpa reply → masuk mode input
+    admin_state[user_id] = {"action": "broadcast_content"}
+    await message.reply_text(
+        "📢 **Broadcast**\n\n"
+        "Kirim pesan yang ingin di-broadcast ke semua user.\n\n"
+        "Support: teks, foto + caption, video + caption.\n"
+        "Atau reply `/broadcast` ke pesan yang ingin di-forward.\n\n"
+        "Kirim pesan sekarang atau /start untuk batal.",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Batal", callback_data="adm_menu")]])
+    )
+
+
+async def _execute_broadcast_copy(context, admin_id: int, admin_chat_id: int,
+                                  from_chat_id: int, message_id: int):
+    """Broadcast via copy_message — support semua jenis pesan (teks, foto, video, sticker, dll)."""
+    user_ids = await db.get_all_user_ids()
+    total = len(user_ids)
+
+    if total == 0:
+        await context.bot.send_message(admin_chat_id, "❌ Tidak ada user terdaftar.")
+        return
+
+    progress_msg = await context.bot.send_message(
+        admin_chat_id,
+        f"📢 Broadcasting ke {total} user...\n⏳ 0/{total}",
+    )
+
+    success = 0
+    failed = 0
+    blocked = 0
+
+    for i, uid in enumerate(user_ids):
+        if uid == admin_id:
+            success += 1
+            continue
+
+        try:
+            await context.bot.copy_message(
+                chat_id=uid,
+                from_chat_id=from_chat_id,
+                message_id=message_id,
+            )
+            success += 1
+        except Exception as e:
+            err_str = str(e).lower()
+            if "blocked" in err_str or "deactivated" in err_str or "not found" in err_str:
+                blocked += 1
+            else:
+                failed += 1
+
+        await asyncio.sleep(0.05)
+
+        if (i + 1) % 50 == 0:
+            try:
+                await progress_msg.edit_text(
+                    f"📢 Broadcasting...\n⏳ {i+1}/{total}\n✅ {success} | ❌ {failed} | 🚫 {blocked}"
+                )
+            except Exception:
+                pass
+
+    report = (
+        f"📢 **Broadcast Selesai**\n\n"
+        f"👥 Total: {total}\n"
+        f"✅ Terkirim: {success}\n"
+        f"🚫 Blocked/deactivated: {blocked}\n"
+        f"❌ Gagal: {failed}"
+    )
+    try:
+        await progress_msg.edit_text(report, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        await context.bot.send_message(admin_chat_id, report, parse_mode=ParseMode.MARKDOWN)
+
+    await db.save_broadcast({
+        "admin_id": admin_id,
+        "type": "copy",
+        "content": "(replied message)",
+        "total": total,
+        "success": success,
+        "blocked": blocked,
+        "failed": failed,
+        "created_at": time.time(),
+    })
+    await db.log_activity("broadcast_sent", category="admin", user_id=admin_id,
+                          details={"total": total, "success": success, "blocked": blocked, "failed": failed, "method": "reply"})
+
+
+async def _execute_broadcast(context, admin_id: int, admin_chat_id: int, text: str = None,
+                             photo_id: str = None, video_id: str = None, caption: str = None):
+    """Execute broadcast to all users with delay and progress report."""
+    user_ids = await db.get_all_user_ids()
+    total = len(user_ids)
+
+    if total == 0:
+        await context.bot.send_message(admin_chat_id, "❌ Tidak ada user terdaftar.")
+        return
+
+    progress_msg = await context.bot.send_message(
+        admin_chat_id,
+        f"📢 Broadcasting ke {total} user...\n⏳ 0/{total}",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+    success = 0
+    failed = 0
+    blocked = 0
+
+    for i, uid in enumerate(user_ids):
+        # Skip admin sendiri
+        if uid == admin_id:
+            success += 1
+            continue
+
+        try:
+            if photo_id:
+                await context.bot.send_photo(chat_id=uid, photo=photo_id, caption=caption,
+                                             parse_mode=ParseMode.HTML)
+            elif video_id:
+                await context.bot.send_video(chat_id=uid, video=video_id, caption=caption,
+                                             parse_mode=ParseMode.HTML)
+            elif text:
+                await context.bot.send_message(chat_id=uid, text=text, parse_mode=ParseMode.HTML)
+            success += 1
+        except Exception as e:
+            err_str = str(e).lower()
+            if "blocked" in err_str or "deactivated" in err_str or "not found" in err_str:
+                blocked += 1
+            else:
+                failed += 1
+
+        # Rate limit: 0.05s delay per message
+        await asyncio.sleep(0.05)
+
+        # Update progress every 50 users
+        if (i + 1) % 50 == 0:
+            try:
+                await progress_msg.edit_text(
+                    f"📢 Broadcasting...\n⏳ {i+1}/{total}\n✅ {success} | ❌ {failed} | 🚫 {blocked}"
+                )
+            except Exception:
+                pass
+
+    # Final report
+    report = (
+        f"📢 **Broadcast Selesai**\n\n"
+        f"👥 Total: {total}\n"
+        f"✅ Terkirim: {success}\n"
+        f"🚫 Blocked/deactivated: {blocked}\n"
+        f"❌ Gagal: {failed}"
+    )
+    try:
+        await progress_msg.edit_text(report, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        await context.bot.send_message(admin_chat_id, report, parse_mode=ParseMode.MARKDOWN)
+
+    # Save to DB
+    await db.save_broadcast({
+        "admin_id": admin_id,
+        "type": "photo" if photo_id else ("video" if video_id else "text"),
+        "content": caption or text or "",
+        "total": total,
+        "success": success,
+        "blocked": blocked,
+        "failed": failed,
+        "created_at": time.time(),
+    })
+    await db.log_activity("broadcast_sent", category="admin", user_id=admin_id,
+                          details={"total": total, "success": success, "blocked": blocked, "failed": failed})

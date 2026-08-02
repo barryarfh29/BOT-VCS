@@ -43,7 +43,7 @@ async def main():
     )
     from ptb_handlers import (
         cmd_start, handle_callback, handle_photo,
-        handle_video_document, handle_text
+        handle_video_document, handle_text, cmd_broadcast
     )
     from bot_manager import start_default_userbot, start_talent_bot
     from session_manager import session_timer, end_session, get_video_list
@@ -60,6 +60,7 @@ async def main():
 
     # Register handlers
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("broadcast", cmd_broadcast))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, handle_photo))
     app.add_handler(MessageHandler(

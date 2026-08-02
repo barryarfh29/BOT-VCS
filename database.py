@@ -261,6 +261,8 @@ async def is_subscribed(talent_id: str, user_id: int) -> bool:
 
 ui_messages_col = db["ui_messages"]
 user_prefs_col = db["user_prefs"]
+broadcasts_col = db["broadcasts"]
+promo_codes_col = db["promo_codes"]
 
 
 async def get_user_lang(user_id: int) -> str:
@@ -349,3 +351,61 @@ async def get_all_templates() -> dict:
     for key in DEFAULT_TEMPLATES:
         result[key] = await get_template(key)
     return result
+
+
+# ============================================================
+# BROADCAST
+# ============================================================
+
+async def get_all_user_ids() -> list:
+    """Get all user_ids that have ever used /start (stored in user_prefs)."""
+    cursor = user_prefs_col.find({}, {"user_id": 1})
+    docs = await cursor.to_list(100000)
+    return [d["user_id"] for d in docs if d.get("user_id")]
+
+
+async def save_broadcast(broadcast: dict):
+    """Save broadcast history."""
+    await broadcasts_col.insert_one(broadcast)
+
+
+async def get_broadcasts(limit: int = 20) -> list:
+    """Get recent broadcasts."""
+    cursor = broadcasts_col.find().sort("created_at", -1).limit(limit)
+    return await cursor.to_list(limit)
+
+
+# ============================================================
+# PROMO CODES
+# ============================================================
+
+async def get_promo(code: str) -> dict | None:
+    """Get promo by code (case-insensitive)."""
+    return await promo_codes_col.find_one({"code": code.upper()})
+
+
+async def create_promo(data: dict) -> dict:
+    """Create a new promo code."""
+    data["code"] = data["code"].upper()
+    data.setdefault("used_count", 0)
+    data.setdefault("active", True)
+    data.setdefault("talent_ids", [])  # [] = berlaku semua talent
+    data.setdefault("created_at", time.time())
+    await promo_codes_col.insert_one(data)
+    return data
+
+
+async def use_promo(code: str):
+    """Increment used_count for a promo code."""
+    await promo_codes_col.update_one({"code": code.upper()}, {"$inc": {"used_count": 1}})
+
+
+async def get_all_promos() -> list:
+    """Get all promo codes."""
+    cursor = promo_codes_col.find().sort("created_at", -1)
+    return await cursor.to_list(500)
+
+
+async def delete_promo(code: str):
+    """Delete a promo code."""
+    await promo_codes_col.delete_one({"code": code.upper()})
