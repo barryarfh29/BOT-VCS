@@ -270,6 +270,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.delete()
         except Exception:
             pass
+
+        # Log ke channel
+        lang_label = "🇮🇩 Indonesia" if lang == "id" else "🇲🇾 Malaysia"
+        await _log_to_channel("log_channel_start",
+            f"👤 **New User Start**\nID: `{user_id}`\nName: {query.from_user.first_name or '-'}\nUsername: @{query.from_user.username or '-'}\nLanguage: {lang_label}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Chat", url=f"tg://user?id={user_id}")]]),
+            context=context,
+        )
+        await db.log_activity("bot_start", category="user", user_id=user_id,
+                              details={"name": query.from_user.first_name, "lang": lang})
+
         # Langsung tampilkan menu talent
         chat_id = query.message.chat_id
         await _send_talent_menu(chat_id, user_id, context)
