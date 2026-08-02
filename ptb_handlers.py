@@ -247,6 +247,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         markup_rows = []
         for row in buttons:
             markup_rows.append([{"text": b.text, "callback_data": b.callback_data} for b in row])
+
+        # Tambah tombol CS
+        settings = await db.get_settings()
+        cs_username = settings.get("cs_username", "")
+        if cs_username:
+            cs_username = cs_username.lstrip("@")
+            markup_rows.append([{"text": "📞 Customer Service", "url": f"https://t.me/{cs_username}"}])
+
         markup_dict = {"inline_keyboard": markup_rows}
 
         if clean:
