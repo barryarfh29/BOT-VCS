@@ -67,6 +67,53 @@ async def format_price(price_idr: int, user_id: int) -> str:
     return f"Rp {price_idr:,}"
 
 
+async def _send_talent_menu(chat_id: int, user_id: int, context):
+    """Kirim menu talent (loading + welcome). Bisa dipanggil dari message atau callback."""
+    from rich_message import render_template, send_template
+    from bot_manager import bot as bot_wrapper
+
+    talents = await db.get_talents()
+    count = len(talents)
+    tpl1_raw = (await db.get_template("loading_1")).replace("{count}", str(count))
+    tpl1_html = render_template(tpl1_raw, count=str(count))
+    loading = await context.bot.send_message(chat_id=chat_id, text=tpl1_html or "🔍 Loading...", parse_mode=ParseMode.HTML)
+    await asyncio.sleep(1)
+
+    if not talents:
+        await loading.edit_text("No talents available.")
+        return
+
+    btns = []
+    for t in talents:
+        tid = t["id"]
+        in_session = await db.get_session_by_talent(tid)
+        cooldown_at = await db.get_cooldown(tid)
+        is_off = t.get("offline", False)
+        if is_off or in_session or (cooldown_at and time.time() < cooldown_at):
+            btns.append(InlineKeyboardButton(f"{t['name']} — FULL", callback_data=f"full_{tid}"))
+        else:
+            btns.append(InlineKeyboardButton(f"{t['name']}", callback_data=f"talent_{tid}"))
+    buttons = [btns[i:i+2] for i in range(0, len(btns), 2)]
+
+    try:
+        await loading.delete()
+    except Exception:
+        pass
+
+    template = await db.get_template("welcome")
+    clean = re.sub(r'<[^>]+>', '', template).strip() if template else ""
+    markup_rows = [[{"text": b.text, "callback_data": b.callback_data} for b in row] for row in buttons]
+    markup_dict = {"inline_keyboard": markup_rows}
+
+    if clean:
+        welcome_id = await send_template(bot_wrapper, chat_id, template, markup=markup_dict)
+        await _track_ui(chat_id, welcome_id)
+    else:
+        msg = await bot_wrapper.send_message(chat_id, "ㅤ", reply_markup=markup_dict)
+        if msg:
+            await _track_ui(chat_id, getattr(msg, 'message_id', None) or getattr(msg, 'id', None))
+
+
 async def _log_to_channel(channel_key: str, text: str, reply_markup=None, context=None):
     """Log ke Telegram channel."""
     try:
@@ -223,11 +270,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.delete()
         except Exception:
             pass
-        # Kirim pesan agar user /start lagi
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text="✅ Language set! Tap /start to continue.",
-        )
+        # Langsung tampilkan menu talent
+        chat_id = query.message.chat_id
+        await _send_talent_menu(chat_id, user_id, context)
         return
 
     # Admin callbacks — check permission
