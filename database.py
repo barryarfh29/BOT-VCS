@@ -260,6 +260,22 @@ async def is_subscribed(talent_id: str, user_id: int) -> bool:
 # ============================================================
 
 ui_messages_col = db["ui_messages"]
+user_prefs_col = db["user_prefs"]
+
+
+async def get_user_lang(user_id: int) -> str:
+    """Get user language preference. Returns 'id' or 'my'. None = belum pilih."""
+    doc = await user_prefs_col.find_one({"user_id": user_id})
+    return doc.get("lang") if doc else None
+
+
+async def set_user_lang(user_id: int, lang: str):
+    """Set user language preference ('id' or 'my')."""
+    await user_prefs_col.update_one(
+        {"user_id": user_id},
+        {"$set": {"user_id": user_id, "lang": lang}},
+        upsert=True
+    )
 
 
 async def track_ui_messages(chat_id: int, msg_ids: list):

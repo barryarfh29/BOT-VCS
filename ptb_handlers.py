@@ -56,6 +56,17 @@ async def is_admin(user_id: int) -> bool:
     return user_id in admins
 
 
+async def format_price(price_idr: int, user_id: int) -> str:
+    """Format harga berdasarkan bahasa user. IDR → MYR kalau Malaysia."""
+    lang = await db.get_user_lang(user_id)
+    if lang == "my":
+        from currency import get_myr_rate
+        rate = await get_myr_rate()
+        myr = price_idr / rate
+        return f"RM {myr:.2f}"
+    return f"Rp {price_idr:,}"
+
+
 async def _log_to_channel(channel_key: str, text: str, reply_markup=None, context=None):
     """Log ke Telegram channel."""
     try:
@@ -85,6 +96,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Clean previous UI messages
     await _clean_ui(chat_id, context)
+
+    # Cek bahasa — kalau belum pilih DAN bukan admin, tampilkan pilihan
+    if not await is_admin(user_id):
+        lang = await db.get_user_lang(user_id)
+        if not lang:
+            await update.message.reply_text(
+                "🌐 **Select Language / Pilih Bahasa**",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🇮🇩 Indonesia", callback_data="lang_id"),
+                     InlineKeyboardButton("🇲🇾 Malaysia", callback_data="lang_my")]
+                ])
+            )
+            return
 
     settings = await db.get_settings()
     if not settings.get("admin_ids"):
@@ -189,6 +214,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
 
     await query.answer()
+
+    # Language selection
+    if data in ("lang_id", "lang_my"):
+        lang = "id" if data == "lang_id" else "my"
+        await db.set_user_lang(user_id, lang)
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        # Trigger /start flow again (now with lang set)
+        await cmd_start(update, context)
+        return
 
     # Admin callbacks — check permission
     if data.startswith("adm_"):
@@ -485,12 +522,10 @@ async def _handle_talent_detail(update, context, data):
     if not talent:
         return
 
-    from currency import get_myr_rate
     from rich_message import send_template, duration_display, apply_duration_label, strip_price_duration_rows
     from bot_manager import bot
 
-    myr_rate = await get_myr_rate()
-    price_str = f"{talent['price']:,} IDR / {talent['price']/myr_rate:.2f} MYR"
+    price_str = await format_price(int(talent['price']), query.from_user.id)
 
     packages = talent.get("packages") or []
     if packages:
@@ -498,7 +533,8 @@ async def _handle_talent_detail(update, context, data):
         for i, p in enumerate(packages):
             lbl = (p.get("label") or "").strip() or f"{p.get('duration',0)} min"
             pkg_price = int(p.get('price', 0))
-            btns.append(InlineKeyboardButton(f"{lbl} — Rp {pkg_price:,}",
+            pkg_price_str = await format_price(pkg_price, query.from_user.id)
+            btns.append(InlineKeyboardButton(f"{lbl} — {pkg_price_str}",
                                              callback_data=f"pord_{talent_id}_{i}"))
         buttons = [btns[j:j+2] for j in range(0, len(btns), 2)]
     else:
