@@ -940,12 +940,19 @@ async def _poll_payment(context, user_id, invoice_id, chat_id, talent, msg_ids):
             status = inv.get("status")
             if status == "PAID":
                 await db.update_transaction(invoice_id, status="PAID")
-                # Log payment
-                await _log_to_channel("log_channel_payment",
-                    f"💰 **Pembayaran Berhasil**\nInvoice: `{invoice_id}`\nUser: `{user_id}`\n"
-                    f"Talent: {talent.get('name','-')}\nAmount: Rp {talent.get('price',0):,}",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Chat", url=f"tg://user?id={user_id}")]]),
-                    context=context)
+                # Notify admin DM (bukan channel — channel hanya untuk bukti foto)
+                admin_ids = await db.get_admin_ids()
+                for aid in admin_ids:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=aid,
+                            text=f"💰 **Pembayaran Berhasil**\nInvoice: `{invoice_id}`\nUser: `{user_id}`\n"
+                                 f"Talent: {talent.get('name','-')}\nAmount: Rp {talent.get('price',0):,}",
+                            parse_mode=ParseMode.MARKDOWN,
+                            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Chat", url=f"tg://user?id={user_id}")]]),
+                        )
+                    except Exception:
+                        pass
                 # Delete QR + invoice msg
                 for mid in msg_ids:
                     if mid:
