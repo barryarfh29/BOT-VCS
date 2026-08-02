@@ -398,6 +398,7 @@ async def get_settings(request):
         "admin_ids": settings.get("admin_ids", []),
         "log_channel_start": settings.get("log_channel_start", 0),
         "log_channel_payment": settings.get("log_channel_payment", 0),
+        "cs_username": settings.get("cs_username", ""),
     })
 
 
@@ -440,6 +441,8 @@ async def update_settings(request):
             updates["log_channel_payment"] = int(body["log_channel_payment"]) if body["log_channel_payment"] else 0
         except (ValueError, TypeError):
             return web.json_response({"error": "Invalid log_channel_payment"}, status=400)
+    if "cs_username" in body:
+        updates["cs_username"] = str(body.get("cs_username", "")).strip().lstrip("@")
 
     if updates:
         await db.update_settings(**updates)
@@ -454,6 +457,7 @@ async def update_settings(request):
         "admin_ids": settings.get("admin_ids", []),
         "log_channel_start": settings.get("log_channel_start", 0),
         "log_channel_payment": settings.get("log_channel_payment", 0),
+        "cs_username": settings.get("cs_username", ""),
     })
 
 
