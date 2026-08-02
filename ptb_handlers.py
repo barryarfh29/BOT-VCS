@@ -415,6 +415,7 @@ async def _handle_admin_callback(update, context, data):
                 [InlineKeyboardButton("Harga", callback_data="adm_s_price"),
                  InlineKeyboardButton("Durasi", callback_data="adm_s_duration")],
                 [InlineKeyboardButton("+ Admin", callback_data="adm_s_addadmin")],
+                [InlineKeyboardButton("Fake Order", callback_data="adm_fake_menu")],
                 [InlineKeyboardButton("Kembali", callback_data="adm_menu")],
             ]))
 
@@ -575,6 +576,94 @@ async def _handle_admin_callback(update, context, data):
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Batal", callback_data=f"adm_pkg_{talent_id}")]]))
 
+    # Fake Order flow
+    elif data == "adm_fake_menu":
+        talents = await db.get_talents()
+        if not talents:
+            await query.answer("Belum ada talent.", show_alert=True)
+            return
+        buttons = []
+        for t in talents:
+            buttons.append([InlineKeyboardButton(
+                f"{t['name']} — Rp {t['price']:,}",
+                callback_data=f"adm_fake_t_{t['id']}"
+            )])
+        buttons.append([InlineKeyboardButton("Kembali", callback_data="adm_setting")])
+        await query.message.edit_text("**Fake Order**\n\nPilih talent:", parse_mode=ParseMode.MARKDOWN,
+                                      reply_markup=InlineKeyboardMarkup(buttons))
+
+    elif data.startswith("adm_fake_t_"):
+        talent_id = data.replace("adm_fake_t_", "")
+        talent = await db.get_talent(talent_id)
+        if not talent:
+            return
+        admin_state[user_id] = {
+            "action": "fake_order_name",
+            "talent_id": talent_id,
+            "talent_name": talent["name"],
+            "talent_price": talent["price"],
+        }
+        await query.message.edit_text(
+            f"**Fake Order — {talent['name']}**\n\nKirim nama pembeli (fake):",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Batal", callback_data="adm_fake_menu")]]))
+
+    elif data.startswith("adm_fake_time_"):
+        raw = data.replace("adm_fake_time_", "")
+        minutes = int(raw)
+        state = admin_state.get(user_id)
+        if not state or state.get("action") != "fake_order_send":
+            return
+
+        talent_name = state["talent_name"]
+        talent_price = state["talent_price"]
+        fake_name = state["fake_name"]
+        del admin_state[user_id]
+
+        # Build fake notification message (same format as real payment success)
+        fake_invoice = f"FAKE-{int(time.time())}"
+        fake_text = (
+            f"\U0001f4b0 *Pembayaran Berhasil*\n"
+            f"Invoice: `{fake_invoice}`\n"
+            f"User: {fake_name}\n"
+            f"Talent: {talent_name}\n"
+            f"Amount: Rp {talent_price:,}"
+        )
+
+        chat_id = query.message.chat_id
+
+        # Delete the time selection message
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        # Send fake notification
+        fake_msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text=fake_text,
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+        # Schedule auto-delete
+        if minutes > 0:
+            asyncio.create_task(_auto_delete_fake_order(context, chat_id, fake_msg.message_id, minutes))
+            time_label = f"{minutes} menit" if minutes < 60 else f"{minutes // 60} jam"
+            confirm = await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"\u2705 Fake order terkirim. Auto-delete dalam {time_label}.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Menu", callback_data="adm_menu")]]),
+            )
+        else:
+            confirm = await context.bot.send_message(
+                chat_id=chat_id,
+                text="\u2705 Fake order terkirim. (tidak akan dihapus otomatis)",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Menu", callback_data="adm_menu")]]),
+            )
+
+        await db.log_activity("fake_order", category="admin", user_id=user_id,
+                              details={"talent": talent_name, "fake_name": fake_name, "auto_delete_min": minutes})
+
     # Catch-all — route to settings sub-handler or show not available
     elif data.startswith("adm_s_"):
         await _handle_admin_settings_callback(update, context, data)
@@ -607,6 +696,18 @@ async def _handle_admin_settings_callback(update, context, data):
         await query.message.edit_text("**Kirim user ID:**", parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Batal", callback_data="adm_setting")]]))
 
+
+# ============================================================
+# FAKE ORDER — Auto-delete helper
+# ============================================================
+
+async def _auto_delete_fake_order(context, chat_id: int, message_id: int, minutes: int):
+    """Auto-delete a fake order message after the specified number of minutes."""
+    try:
+        await asyncio.sleep(minutes * 60)
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
 
 # ============================================================
 # CUSTOMER CALLBACKS
@@ -1390,6 +1491,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = admin_state[user_id]
     action = state.get("action")
+
+    # Fake order — receive fake buyer name
+    if action == "fake_order_name":
+        state["fake_name"] = text
+        state["action"] = "fake_order_send"
+        await message.reply_text(
+            f"**Fake Order**\n\n"
+            f"Talent: {state['talent_name']}\n"
+            f"Buyer: {text}\n\n"
+            f"Pilih waktu auto-delete:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("5 menit", callback_data="adm_fake_time_5"),
+                 InlineKeyboardButton("30 menit", callback_data="adm_fake_time_30")],
+                [InlineKeyboardButton("1 jam", callback_data="adm_fake_time_60"),
+                 InlineKeyboardButton("3 jam", callback_data="adm_fake_time_180")],
+                [InlineKeyboardButton("Tanpa auto-delete", callback_data="adm_fake_time_0")],
+                [InlineKeyboardButton("Batal", callback_data="adm_fake_menu")],
+            ]))
+        return
 
     # Add talent flow
     if action == "add_talent":
