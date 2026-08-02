@@ -24,6 +24,27 @@ admin_state = {}
 # Payment message tracking: invoice_id -> {chat_id, msg_ids: [qr_msg_id, invoice_msg_id]}
 _payment_msgs = {}
 
+# Telegram supported HTML tags
+_TG_ALLOWED_TAGS = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+                    "code", "pre", "a", "tg-spoiler", "blockquote", "span"}
+
+
+def _strip_unsupported_html(html: str) -> str:
+    """Strip HTML tags not supported by Telegram, keep text content and allowed tags."""
+    import re
+    def _replace_tag(m):
+        tag = m.group(1).lower().split()[0].strip("/")
+        if tag in _TG_ALLOWED_TAGS:
+            return m.group(0)
+        # Replace block-level tags with newline, inline with nothing
+        if tag in ("p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr"):
+            return "\n"
+        return ""
+    result = re.sub(r'<(/?\w[^>]*)>', _replace_tag, html)
+    # Clean up multiple newlines
+    result = re.sub(r'\n{3,}', '\n\n', result).strip()
+    return result
+
 
 # ============================================================
 # UI CLEANUP — hapus pesan lama supaya chat selalu bersih
@@ -795,9 +816,10 @@ async def _start_order(update, context, talent):
 
     # Simpan state order — tunggu promo input atau skip
     promo_tpl = await db.get_template("promo_prompt")
+    promo_text = _strip_unsupported_html(promo_tpl) if promo_tpl else "🎟 <b>Punya promo code?</b>\nKirim kode sekarang atau klik Skip."
     promo_msg = await context.bot.send_message(
         chat_id,
-        promo_tpl or "🎟 <b>Punya promo code?</b>\nKirim kode sekarang atau klik Skip.",
+        promo_text,
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Skip ▶️", callback_data="promo_skip")]
@@ -1336,7 +1358,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disc_text = await format_price(int(promo['discount_value']), user_id)
 
         applied_tpl = await db.get_template("promo_applied")
-        applied_text = (applied_tpl or "✅ Promo <b>{code}</b> applied! Diskon: {discount}").replace("{code}", code).replace("{discount}", disc_text)
+        applied_raw = (applied_tpl or "✅ Promo <b>{code}</b> applied! Diskon: {discount}").replace("{code}", code).replace("{discount}", disc_text)
+        applied_text = _strip_unsupported_html(applied_raw)
 
         confirm_msg = await context.bot.send_message(
             chat_id,
