@@ -794,20 +794,22 @@ async def _start_order(update, context, talent):
     await _clean_ui(chat_id, context)
 
     # Simpan state order — tunggu promo input atau skip
-    admin_state[user.id] = {
-        "action": "promo_input",
-        "talent": talent,
-        "chat_id": chat_id,
-    }
-
-    await context.bot.send_message(
+    promo_tpl = await db.get_template("promo_prompt")
+    promo_msg = await context.bot.send_message(
         chat_id,
-        "🎟 **Punya promo code?**\nKirim kode sekarang atau klik Skip.",
-        parse_mode=ParseMode.MARKDOWN,
+        promo_tpl or "🎟 <b>Punya promo code?</b>\nKirim kode sekarang atau klik Skip.",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Skip ▶️", callback_data="promo_skip")]
         ])
     )
+
+    admin_state[user.id] = {
+        "action": "promo_input",
+        "talent": talent,
+        "chat_id": chat_id,
+        "promo_msg_id": promo_msg.message_id,
+    }
 
 
 async def _proceed_order(context, user_id: int, chat_id: int, talent: dict, promo: dict = None):
@@ -1091,6 +1093,8 @@ async def _handle_promo_skip(update, context):
         return
 
     state = admin_state.pop(uid)
+
+    # Hapus pesan promo prompt
     try:
         await query.message.delete()
     except Exception:
@@ -1309,15 +1313,43 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Valid promo — proceed with discount
         chat_id = state["chat_id"]
         talent = state["talent"]
+        promo_msg_id = state.get("promo_msg_id")
         del admin_state[user_id]
 
-        # Show confirmation
+        # Hapus pesan promo prompt
+        if promo_msg_id:
+            try:
+                await context.bot.delete_message(chat_id, promo_msg_id)
+            except Exception:
+                pass
+
+        # Hapus pesan user (kode yang dikirim)
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        # Show confirmation dengan harga sesuai negara
         if promo["discount_type"] == "percent":
             disc_text = f"{int(promo['discount_value'])}%"
         else:
-            disc_text = f"Rp {int(promo['discount_value']):,}"
-        await message.reply_text(f"✅ Promo **{code}** applied! Diskon: {disc_text}", parse_mode=ParseMode.MARKDOWN)
-        await asyncio.sleep(1)
+            disc_text = await format_price(int(promo['discount_value']), user_id)
+
+        applied_tpl = await db.get_template("promo_applied")
+        applied_text = (applied_tpl or "✅ Promo <b>{code}</b> applied! Diskon: {discount}").replace("{code}", code).replace("{discount}", disc_text)
+
+        confirm_msg = await context.bot.send_message(
+            chat_id,
+            applied_text,
+            parse_mode=ParseMode.HTML
+        )
+        await asyncio.sleep(1.5)
+
+        # Hapus pesan konfirmasi juga
+        try:
+            await confirm_msg.delete()
+        except Exception:
+            pass
 
         await _proceed_order(context, user_id, chat_id, talent, promo=promo)
         return

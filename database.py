@@ -325,6 +325,8 @@ DEFAULT_TEMPLATES = {
     "talent_detail": "<h4>{talent_name}</h4><p>{desc}</p><table><tbody><tr><td><p><strong>Price</strong></p></td><td><p><strong>{price}</strong></p></td></tr><tr><td><p><strong>Duration</strong></p></td><td><p>{duration} minutes</p></td></tr></tbody></table><p>Tap <b>Order</b> to continue.</p>",
     "channel_greeting": "<h4>WELCOME</h4><p><b>{talent_name}</b> is here for you.</p><p>Silahkan naik ke live stream di atas, saya siap melayani anda.</p><p>Your <b>{duration} minute</b> private session starts when you join the voice chat.</p>",
     "join_warning": "<h4>⏰ ARE YOU THERE?</h4><p><b>{talent_name}</b> is live and waiting for you.</p><p>Please join the video chat within <b>{remaining} minutes</b>, or your session will be marked as completed.</p>",
+    "promo_prompt": "🎟 <b>Punya promo code?</b>\nKirim kode sekarang atau klik Skip.",
+    "promo_applied": "✅ Promo <b>{code}</b> applied! Diskon: {discount}",
 }
 
 

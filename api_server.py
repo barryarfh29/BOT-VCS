@@ -79,6 +79,8 @@ TEMPLATE_DESCRIPTIONS = {
     "talent_detail": "Detail talent (deskripsi via admin bot)",
     "channel_greeting": "Sapaan di channel private (dikirim talent saat customer join)",
     "join_warning": "Peringatan kalau customer belum naik ke video chat (5 menit)",
+    "promo_prompt": "Prompt input promo code sebelum bayar",
+    "promo_applied": "Konfirmasi promo berhasil. Variabel: {code}, {discount}",
 }
 
 
