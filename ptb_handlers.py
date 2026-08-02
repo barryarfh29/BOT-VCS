@@ -384,11 +384,11 @@ async def _handle_admin_callback(update, context, data):
         else:
             pkg_text = "  (belum ada)"
         videos_text = "\n".join([f"  {i+1}. {v.get('filename',v) if isinstance(v,dict) else v}" for i, v in enumerate(videos)]) if videos else "  Belum ada"
-        text = (f"**{talent['name']}**\n\n"
+        text = (f"<b>{talent['name']}</b>\n\n"
                 f"Status: {'OFFLINE' if talent.get('offline') else 'ONLINE'}\n"
                 f"Harga: Rp {talent['price']:,} | Durasi: {talent['duration']}m | CD: {talent.get('cooldown',0)}m\n\n"
-                f"**Paket ({len(pkgs)}):**\n{pkg_text}\n\n"
-                f"**Video ({len(videos)}):**\n{videos_text}")
+                f"<b>Paket ({len(pkgs)}):</b>\n{pkg_text}\n\n"
+                f"<b>Video ({len(videos)}):</b>\n{videos_text}")
         toggle = "Set ONLINE" if talent.get("offline") else "Set OFFLINE"
         buttons = [
             [InlineKeyboardButton(toggle, callback_data=f"adm_toggle_{talent_id}")],
@@ -407,7 +407,7 @@ async def _handle_admin_callback(update, context, data):
             [InlineKeyboardButton("Hapus Talent", callback_data=f"adm_tdel_{talent_id}")],
             [InlineKeyboardButton("Kembali", callback_data="adm_talents")],
         ]
-        await query.message.edit_text(text, parse_mode=ParseMode.MARKDOWN,
+        await query.message.edit_text(text, parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(buttons))
 
     elif data.startswith("adm_toggle_"):
