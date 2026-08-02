@@ -725,19 +725,28 @@ async def delete_video(request):
 
 async def _serve_media_from_file_id(file_id: str, cache_name: str):
     """Download media Telegram (sekali, lalu cache lokal) dan balikan path-nya."""
-    from bot_manager import get_pyro_bot
+    from bot_manager import get_pyro_bot, bot
     os.makedirs(VIDEO_FOLDER, exist_ok=True)
     local_path = os.path.join(VIDEO_FOLDER, cache_name)
     if os.path.isfile(local_path):
         return local_path
 
+    # Coba Pyrogram dulu (support file besar via MTProto)
     try:
         pyro = await get_pyro_bot()
         await pyro.download_media(file_id, file_name=local_path)
         if os.path.isfile(local_path):
             return local_path
     except Exception as e:
-        logger.error(f"Media download failed: {e}")
+        logger.warning(f"Pyrogram download failed, trying Bot API fallback: {e}")
+
+    # Fallback ke Bot API (PTB) — works untuk file <20MB termasuk photo thumbnails
+    try:
+        result = await bot.download_media(file_id, file_name=local_path)
+        if result and os.path.isfile(local_path):
+            return local_path
+    except Exception as e:
+        logger.error(f"Media download failed (both methods): {e}")
 
     return None
 
