@@ -1053,13 +1053,21 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state = admin_state[bukti_key]
         del admin_state[bukti_key]
 
-        # Forward bukti ke admin
+        # Forward bukti ke channel testimoni (log_channel_payment)
+        settings = await db.get_settings()
+        payment_channel = settings.get("log_channel_payment", 0)
+        if payment_channel:
+            try:
+                await context.bot.forward_message(chat_id=int(payment_channel), from_chat_id=message.chat_id, message_id=message.message_id)
+            except Exception:
+                pass
+
+        # Notify admin DM
         admin_ids = await db.get_admin_ids()
         for aid in admin_ids:
             try:
-                await context.bot.forward_message(chat_id=aid, from_chat_id=message.chat_id, message_id=message.message_id)
                 await context.bot.send_message(chat_id=aid,
-                    text=f"Bukti pembayaran dari user `{user_id}`\nTalent: {state['talent']['name']}",
+                    text=f"💰 **Bukti Pembayaran**\nUser: `{user_id}`\nTalent: {state['talent']['name']}",
                     parse_mode=ParseMode.MARKDOWN)
             except Exception:
                 pass
