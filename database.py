@@ -411,3 +411,8 @@ async def get_all_promos() -> list:
 async def delete_promo(code: str):
     """Delete a promo code."""
     await promo_codes_col.delete_one({"code": code.upper()})
+
+
+async def update_promo(code: str, updates: dict):
+    """Update fields of an existing promo code."""
+    await promo_codes_col.update_one({"code": code.upper()}, {"$set": updates})

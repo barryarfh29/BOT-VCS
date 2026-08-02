@@ -1260,6 +1260,75 @@ async def api_delete_promo(request):
     return web.json_response({"ok": True})
 
 
+async def api_update_promo(request):
+    """PUT /api/promos/{code} — update an existing promo code."""
+    token = request.headers.get("Authorization", "")
+    if not await verify_admin(token):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    code = request.match_info["code"].upper()
+    existing = await db.get_promo(code)
+    if not existing:
+        return web.json_response({"error": "Not found"}, status=404)
+
+    body = await request.json()
+    updates = {}
+
+    if "discount_type" in body:
+        if body["discount_type"] not in ("percent", "fixed"):
+            return web.json_response({"error": "discount_type must be 'percent' or 'fixed'"}, status=400)
+        updates["discount_type"] = body["discount_type"]
+
+    if "discount_value" in body:
+        try:
+            val = float(body["discount_value"])
+            if val <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return web.json_response({"error": "Invalid discount_value"}, status=400)
+        dtype = updates.get("discount_type", existing.get("discount_type"))
+        if dtype == "percent" and val > 100:
+            return web.json_response({"error": "Percent discount cannot exceed 100"}, status=400)
+        updates["discount_value"] = val
+
+    if "max_uses" in body:
+        try:
+            updates["max_uses"] = int(body["max_uses"])
+        except (ValueError, TypeError):
+            updates["max_uses"] = 0
+
+    if "talent_ids" in body:
+        talent_ids = body["talent_ids"]
+        if not isinstance(talent_ids, list):
+            talent_ids = []
+        updates["talent_ids"] = [str(t).strip() for t in talent_ids if t]
+
+    if "active" in body:
+        updates["active"] = bool(body["active"])
+
+    if "created_by" in body:
+        updates["created_by"] = str(body["created_by"]).strip()
+
+    if not updates:
+        return web.json_response({"error": "No fields to update"}, status=400)
+
+    await db.update_promo(code, updates)
+    await db.log_activity("promo_updated", category="admin", details={"code": code, "fields": list(updates.keys()), "via": "web"})
+
+    promo = await db.get_promo(code)
+    return web.json_response({
+        "code": promo["code"],
+        "discount_type": promo.get("discount_type"),
+        "discount_value": promo.get("discount_value"),
+        "max_uses": promo.get("max_uses", 0),
+        "used_count": promo.get("used_count", 0),
+        "talent_ids": promo.get("talent_ids", []),
+        "created_by": promo.get("created_by", ""),
+        "active": promo.get("active", True),
+        "created_at": promo.get("created_at", 0),
+    })
+
+
 async def start_api_server(port=None):
     if port is None:
         port = API_PORT
@@ -1300,6 +1369,7 @@ async def start_api_server(port=None):
     app.router.add_get("/api/broadcasts", api_get_broadcasts)
     app.router.add_get("/api/promos", api_get_promos)
     app.router.add_post("/api/promos", api_create_promo)
+    app.router.add_put("/api/promos/{code}", api_update_promo)
     app.router.add_delete("/api/promos/{code}", api_delete_promo)
 
     runner = web.AppRunner(app)
