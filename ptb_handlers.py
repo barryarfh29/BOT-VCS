@@ -1034,14 +1034,18 @@ async def handle_video_document(update: Update, context: ContextTypes.DEFAULT_TY
 
     if state["action"] == "edit_video":
         tid = state["talent_id"]
+        # Track jumlah video yang sudah ditambahkan
+        count = state.get("_video_count", 0) + 1
+        state["_video_count"] = count
         await db.add_video_to_talent(tid, {
             "file_id": file_id, "filename": filename,
             "title": "", "length_seconds": length_seconds,
         })
-        del admin_state[user_id]
-        await message.reply_text(f"Video ditambahkan: `{filename}`",
+        # Jangan hapus state — tunggu video lain atau "Selesai"
+        await message.reply_text(
+            f"✅ Video #{count} ditambahkan: `{filename}`\n\nKirim video lagi atau klik **Selesai**.",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data=f"adm_tedit_{tid}")]]))
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Selesai", callback_data=f"adm_tedit_{tid}")]]))
 
     elif state["action"] == "add_talent" and state.get("step") == "video":
         await db.add_talent({
