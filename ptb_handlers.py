@@ -223,8 +223,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.delete()
         except Exception:
             pass
-        # Trigger /start flow again (now with lang set)
-        await cmd_start(update, context)
+        # Kirim pesan agar user /start lagi
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="✅ Language set! Tap /start to continue.",
+        )
         return
 
     # Admin callbacks — check permission
