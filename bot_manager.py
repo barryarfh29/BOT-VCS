@@ -167,6 +167,11 @@ async def start_default_userbot():
         await call.start()
         me = await userbot.get_me()
         userbot_ready = True
+
+        # Register userbot order handlers (CS auto-reply)
+        from userbot_order import register_userbot_handlers
+        register_userbot_handlers(userbot)
+
         logger.info(f"Default userbot: {me.first_name} ({me.id})")
         print(f"✅ Default userbot: {me.first_name} ({me.id})")
         return True

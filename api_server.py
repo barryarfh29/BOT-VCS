@@ -408,6 +408,10 @@ async def get_settings(request):
             "interval_max": 15,
             "delete_after": 3,
         }),
+        "userbot_order": {
+            "enabled": settings.get("userbot_order_enabled", True),
+            "triggers": settings.get("userbot_triggers", []),
+        },
     })
 
 
@@ -463,6 +467,19 @@ async def update_settings(request):
                 "delete_after": max(0, int(fb.get("delete_after", 3))),
             }
 
+    if "userbot_order" in body:
+        ub = body["userbot_order"]
+        if isinstance(ub, dict):
+            if "enabled" in ub:
+                updates["userbot_order_enabled"] = bool(ub["enabled"])
+            if "triggers" in ub:
+                triggers = ub["triggers"]
+                if isinstance(triggers, list):
+                    updates["userbot_triggers"] = [str(t).strip().lower() for t in triggers if str(t).strip()]
+                elif isinstance(triggers, str):
+                    # Support comma-separated string
+                    updates["userbot_triggers"] = [t.strip().lower() for t in triggers.split(",") if t.strip()]
+
     if updates:
         await db.update_settings(**updates)
         await db.log_activity("settings_updated", category="admin", details={"fields": list(updates.keys()), "via": "web"})
@@ -483,6 +500,10 @@ async def update_settings(request):
             "interval_max": 15,
             "delete_after": 3,
         }),
+        "userbot_order": {
+            "enabled": settings.get("userbot_order_enabled", True),
+            "triggers": settings.get("userbot_triggers", []),
+        },
     })
 
 
