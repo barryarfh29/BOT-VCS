@@ -43,7 +43,8 @@ async def main():
     )
     from ptb_handlers import (
         cmd_start, handle_callback, handle_photo,
-        handle_video_document, handle_text, cmd_broadcast
+        handle_video_document, handle_text, cmd_broadcast,
+        start_fake_buyer_loop
     )
     from bot_manager import start_default_userbot, start_talent_bot
     from session_manager import session_timer, end_session, get_video_list
@@ -110,6 +111,9 @@ async def main():
 
     # Start API server
     await start_api_server(API_PORT)
+
+    # Start fake buyer notification loop
+    await start_fake_buyer_loop(app.bot)
 
     # Keep running forever
     await asyncio.Event().wait()

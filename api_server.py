@@ -81,6 +81,7 @@ TEMPLATE_DESCRIPTIONS = {
     "join_warning": "Peringatan kalau customer belum naik ke video chat (5 menit)",
     "promo_prompt": "Prompt input promo code sebelum bayar",
     "promo_applied": "Konfirmasi promo berhasil. Variabel: {code}, {discount}",
+    "fake_buyer": "Notifikasi fake buyer (social proof). Variabel: {username}, {talent_name}",
 }
 
 
@@ -401,6 +402,12 @@ async def get_settings(request):
         "log_channel_start": settings.get("log_channel_start", 0),
         "log_channel_payment": settings.get("log_channel_payment", 0),
         "cs_username": settings.get("cs_username", ""),
+        "fake_buyer": settings.get("fake_buyer", {
+            "enabled": False,
+            "interval_min": 5,
+            "interval_max": 15,
+            "delete_after": 3,
+        }),
     })
 
 
@@ -446,6 +453,16 @@ async def update_settings(request):
     if "cs_username" in body:
         updates["cs_username"] = str(body.get("cs_username", "")).strip().lstrip("@")
 
+    if "fake_buyer" in body:
+        fb = body["fake_buyer"]
+        if isinstance(fb, dict):
+            updates["fake_buyer"] = {
+                "enabled": bool(fb.get("enabled", False)),
+                "interval_min": max(1, int(fb.get("interval_min", 5))),
+                "interval_max": max(1, int(fb.get("interval_max", 15))),
+                "delete_after": max(0, int(fb.get("delete_after", 3))),
+            }
+
     if updates:
         await db.update_settings(**updates)
         await db.log_activity("settings_updated", category="admin", details={"fields": list(updates.keys()), "via": "web"})
@@ -460,6 +477,12 @@ async def update_settings(request):
         "log_channel_start": settings.get("log_channel_start", 0),
         "log_channel_payment": settings.get("log_channel_payment", 0),
         "cs_username": settings.get("cs_username", ""),
+        "fake_buyer": settings.get("fake_buyer", {
+            "enabled": False,
+            "interval_min": 5,
+            "interval_max": 15,
+            "delete_after": 3,
+        }),
     })
 
 

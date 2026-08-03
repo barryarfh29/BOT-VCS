@@ -1661,3 +1661,130 @@ async def _execute_broadcast(context, admin_id: int, admin_chat_id: int, text: s
     })
     await db.log_activity("broadcast_sent", category="admin", user_id=admin_id,
                           details={"total": total, "success": success, "blocked": blocked, "failed": failed})
+
+
+# ============================================================
+# FAKE BUYER NOTIFICATION (Social Proof / FOMO)
+# ============================================================
+
+import random
+import string
+
+# Username prefixes/suffixes yang terlihat natural (campuran dengan dan tanpa angka)
+_FAKE_NAME_PARTS = [
+    "ari", "dz", "put", "riz", "nad", "fit", "bay", "din", "fad", "nur",
+    "and", "rah", "dev", "sal", "yas", "wah", "zul", "har", "ind", "alf",
+    "nov", "may", "jul", "ran", "kim", "lee", "tan", "lin", "shi", "ami",
+    "ren", "vin", "kai", "zen", "mia", "yun", "han", "sof", "lil", "max",
+]
+
+_FAKE_SUFFIXES = [
+    "", "", "", "a", "i", "n", "ah", "an", "ia", "ra",
+    "12", "99", "07", "21", "88", "", "", "", "x", "z",
+]
+
+
+def _generate_fake_username() -> str:
+    """Generate username fake yang terlihat natural dengan sensor ***."""
+    prefix = random.choice(_FAKE_NAME_PARTS)
+    suffix = random.choice(_FAKE_SUFFIXES)
+    # 60% tanpa angka, 40% dengan angka
+    if random.random() < 0.4 and not suffix[-1:].isdigit():
+        suffix += str(random.randint(0, 9))
+    full = prefix + suffix
+    # Sensor tengah: tampilkan 2 huruf awal + *** + 1-2 huruf akhir
+    if len(full) <= 3:
+        censored = full[0] + "***"
+    else:
+        show_end = random.randint(1, 2)
+        censored = full[:2] + "***" + full[-show_end:]
+    return f"@{censored}"
+
+
+_fake_buyer_task = None
+
+
+async def start_fake_buyer_loop(bot):
+    """Background loop — kirim fake session notification ke semua user secara berkala."""
+    global _fake_buyer_task
+
+    async def _loop():
+        while True:
+            try:
+                # Cek apakah fitur aktif
+                settings = await db.get_settings()
+                fb_settings = settings.get("fake_buyer", {})
+                if not fb_settings.get("enabled", False):
+                    await asyncio.sleep(60)
+                    continue
+
+                interval_min = fb_settings.get("interval_min", 5)
+                interval_max = fb_settings.get("interval_max", 15)
+                delete_after = fb_settings.get("delete_after", 3)  # menit
+
+                # Random interval
+                wait = random.randint(interval_min, interval_max) * 60
+                await asyncio.sleep(wait)
+
+                # Re-check enabled (mungkin dimatikan saat sleep)
+                settings = await db.get_settings()
+                fb_settings = settings.get("fake_buyer", {})
+                if not fb_settings.get("enabled", False):
+                    continue
+
+                # Pilih talent random yang online
+                talents = await db.get_talents()
+                online_talents = [t for t in talents if not t.get("offline")]
+                if not online_talents:
+                    continue
+
+                talent = random.choice(online_talents)
+                fake_user = _generate_fake_username()
+
+                # Template pesan (editable via web)
+                tpl = await db.get_template("fake_buyer")
+                if not tpl:
+                    tpl = "✅ {username} baru saja menyelesaikan sesi dengan <b>{talent_name}</b>"
+                msg_text = tpl.replace("{username}", fake_user).replace("{talent_name}", talent["name"])
+                msg_text = _strip_unsupported_html(msg_text)
+
+                # Kirim ke semua user (kecuali admin & user dalam session)
+                user_ids = await db.get_all_user_ids()
+                admin_ids = await db.get_admin_ids()
+                active_sessions = await db.get_active_sessions()
+                session_users = {s["user_id"] for s in active_sessions}
+
+                sent_messages = []  # [(chat_id, msg_id)]
+
+                for uid in user_ids:
+                    if uid in admin_ids or uid in session_users:
+                        continue
+                    try:
+                        msg = await bot.send_message(
+                            chat_id=uid,
+                            text=msg_text,
+                            parse_mode=ParseMode.HTML,
+                        )
+                        if msg:
+                            sent_messages.append((uid, msg.message_id))
+                    except Exception:
+                        pass
+                    await asyncio.sleep(0.05)
+
+                # Auto-delete setelah X menit
+                if delete_after > 0 and sent_messages:
+                    await asyncio.sleep(delete_after * 60)
+                    for chat_id, msg_id in sent_messages:
+                        try:
+                            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                        except Exception:
+                            pass
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Fake buyer loop error: {e}")
+                await asyncio.sleep(60)
+
+    _fake_buyer_task = asyncio.create_task(_loop())
+    return _fake_buyer_task

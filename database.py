@@ -327,6 +327,7 @@ DEFAULT_TEMPLATES = {
     "join_warning": "<h4>⏰ ARE YOU THERE?</h4><p><b>{talent_name}</b> is live and waiting for you.</p><p>Please join the video chat within <b>{remaining} minutes</b>, or your session will be marked as completed.</p>",
     "promo_prompt": "🎟 <b>Punya promo code?</b>\nKirim kode sekarang atau klik Skip.",
     "promo_applied": "✅ Promo <b>{code}</b> applied! Diskon: {discount}",
+    "fake_buyer": "✅ {username} baru saja menyelesaikan sesi dengan <b>{talent_name}</b>",
 }
 
 
