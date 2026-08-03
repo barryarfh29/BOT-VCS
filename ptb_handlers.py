@@ -1702,16 +1702,25 @@ def _generate_fake_username() -> str:
 
 
 _fake_buyer_task = None
+_last_fake_talent_id = None
 
 
 async def _delayed_delete(bot, messages: list, delay_seconds: int):
     """Background: tunggu lalu hapus pesan-pesan."""
-    await asyncio.sleep(delay_seconds)
-    for chat_id, msg_id in messages:
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-        except Exception:
-            pass
+    try:
+        await asyncio.sleep(delay_seconds)
+        deleted = 0
+        for chat_id, msg_id in messages:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                deleted += 1
+            except Exception as e:
+                logger.warning(f"Fake buyer delete failed ({chat_id}/{msg_id}): {e}")
+        logger.info(f"Fake buyer: deleted {deleted}/{len(messages)} messages after {delay_seconds}s")
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.error(f"Fake buyer _delayed_delete error: {e}")
 
 
 async def start_fake_buyer_loop(bot):
@@ -1745,13 +1754,19 @@ async def start_fake_buyer_loop(bot):
                         break
                 else:
                     # Waktu habis — kirim notifikasi
-                    # Pilih talent random yang online
+                    # Pilih talent random yang online (hindari sama berturut-turut)
+                    global _last_fake_talent_id
                     talents = await db.get_talents()
                     online_talents = [t for t in talents if not t.get("offline")]
                     if not online_talents:
                         continue
 
-                    talent = random.choice(online_talents)
+                    # Filter out last talent jika ada lebih dari 1 pilihan
+                    candidates = [t for t in online_talents if t.get("id") != _last_fake_talent_id]
+                    if not candidates:
+                        candidates = online_talents
+                    talent = random.choice(candidates)
+                    _last_fake_talent_id = talent.get("id")
                     fake_user = _generate_fake_username()
 
                     # Template pesan
