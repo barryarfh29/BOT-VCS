@@ -132,6 +132,9 @@ async def _build_menu_text(user_id: int = None, first_name: str = "") -> str:
         result = tpl.replace("{talent_list}", talent_list)
         result = result.replace("{first_name}", first_name or "kak")
         result = result.replace("{user_id}", str(user_id or ""))
+        # {mention} = clickable text mention link
+        mention = f"[{first_name or 'kak'}](tg://user?id={user_id})" if user_id else (first_name or "kak")
+        result = result.replace("{mention}", mention)
         return result
 
     return f"Halo kak, selamat datang 👋\n\n📝 DAFTAR TALENT:\n\n{talent_list}\n\n✏️ Ketik nama talent untuk order.\nContoh: Sharifah"
