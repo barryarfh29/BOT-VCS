@@ -19,6 +19,28 @@ logger = logging.getLogger(__name__)
 # State per user: {user_id: {"step": ..., "talent": ..., "pkg_index": ..., ...}}
 _ub_state = {}
 
+# Track message IDs per user for cleanup: {user_id: [msg_id, ...]}
+_ub_messages = {}
+
+
+async def _clean_ub(client: Client, chat_id: int, user_id: int):
+    """Hapus semua pesan UI lama (bot replies + user messages) di chat ini."""
+    ids = _ub_messages.pop(user_id, [])
+    for mid in ids:
+        try:
+            await client.delete_messages(chat_id, mid)
+        except Exception:
+            pass
+
+
+async def _track_ub(user_id: int, *msg_ids):
+    """Track message IDs untuk dihapus di step berikutnya."""
+    if user_id not in _ub_messages:
+        _ub_messages[user_id] = []
+    for mid in msg_ids:
+        if mid:
+            _ub_messages[user_id].append(mid)
+
 # Default triggers (editable via DB settings.userbot_triggers)
 DEFAULT_TRIGGERS = [
     "menu", "/menu", "katalog", "produk", "daftar", "list",
@@ -136,7 +158,7 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
 
     nominal = await format_price(price, user_id)
 
-    await client.send_message(chat_id, f"⏳ Membuat invoice...")
+    loading_msg = await client.send_message(chat_id, f"⏳ Membuat invoice...")
 
     invoice = await create_invoice(
         amount=price, merchant_ref=merchant_ref,
@@ -145,6 +167,10 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
     )
 
     if not invoice:
+        try:
+            await loading_msg.delete()
+        except Exception:
+            pass
         await client.send_message(chat_id, "❌ Gagal membuat invoice. Coba lagi nanti.")
         _ub_state.pop(user_id, None)
         return
@@ -152,6 +178,12 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
     invoice_id = invoice["invoice_id"]
     total = invoice["total_amount"]
     nominal = await format_price(total, user_id)
+
+    # Delete loading
+    try:
+        await loading_msg.delete()
+    except Exception:
+        pass
 
     # Send QR
     import base64
@@ -165,7 +197,7 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
         qr_file.name = "qris.png"
         qr_msg = await client.send_photo(chat_id, photo=qr_file)
 
-    await client.send_message(
+    inv_msg = await client.send_message(
         chat_id,
         f"📱 **Invoice**\n\n"
         f"Talent: {talent_name}\n"
@@ -175,6 +207,9 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
         f"Pembayaran otomatis terdeteksi.\n\n"
         f"Ketik 'batal' untuk cancel."
     )
+
+    # Track payment messages for cleanup
+    payment_msg_ids = [m.id for m in [qr_msg, inv_msg] if m]
 
     # Save transaction
     await db.add_transaction({
@@ -214,23 +249,33 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
                 await db.update_transaction(invoice_id, status="PAID")
                 _ub_state.pop(user_id, None)
 
-                # Delete QR
-                if qr_msg:
+                # Delete QR + invoice messages
+                for mid in payment_msg_ids:
                     try:
-                        await qr_msg.delete()
+                        await client.delete_messages(chat_id, mid)
                     except Exception:
                         pass
 
-                await client.send_message(chat_id, "✅ Pembayaran dikonfirmasi!\n⏳ Menghubungkan ke talent...")
+                confirm_msg = await client.send_message(chat_id, "✅ Pembayaran dikonfirmasi!\n⏳ Menghubungkan ke talent...")
                 await asyncio.sleep(2)
+                try:
+                    await confirm_msg.delete()
+                except Exception:
+                    pass
 
-                # Start session — use bot wrapper for session (channel creation uses talent bot)
+                # Start session
                 await start_session(user_id, invoice_id, chat_id, talent)
                 return
 
             elif status in ["EXPIRED", "CANCELLED"]:
                 await db.update_transaction(invoice_id, status=status)
                 _ub_state.pop(user_id, None)
+                # Delete QR + invoice
+                for mid in payment_msg_ids:
+                    try:
+                        await client.delete_messages(chat_id, mid)
+                    except Exception:
+                        pass
                 await client.send_message(chat_id, f"❌ Invoice {status.lower()}.")
                 return
     except asyncio.CancelledError:
@@ -266,7 +311,12 @@ def register_userbot_handlers(client: Client):
         if state and state.get("step") == "waiting_payment":
             if text.lower() in ("batal", "cancel", "stop"):
                 _ub_state.pop(user_id, None)
-                await message.reply("❌ Order dibatalkan.")
+                await _clean_ub(c, chat_id, user_id)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                await c.send_message(chat_id, "❌ Order dibatalkan.")
             # Ignore other messages during payment wait
             return
 
@@ -276,11 +326,21 @@ def register_userbot_handlers(client: Client):
                 talent = state["talent"]
                 price = talent["price"]
                 duration = talent["duration"]
+                await _clean_ub(c, chat_id, user_id)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
                 asyncio.create_task(_send_qr_and_poll(c, user_id, chat_id, talent, price, duration))
                 return
             elif text.lower() in ("batal", "cancel", "tidak", "no"):
                 _ub_state.pop(user_id, None)
-                await message.reply("❌ Order dibatalkan.")
+                await _clean_ub(c, chat_id, user_id)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                await c.send_message(chat_id, "❌ Order dibatalkan.")
                 return
 
         # --- State: pick_package ---
@@ -290,7 +350,12 @@ def register_userbot_handlers(client: Client):
 
             if text.lower() in ("batal", "cancel"):
                 _ub_state.pop(user_id, None)
-                await message.reply("❌ Order dibatalkan.")
+                await _clean_ub(c, chat_id, user_id)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                await c.send_message(chat_id, "❌ Order dibatalkan.")
                 return
 
             # Try parse package number
@@ -300,27 +365,35 @@ def register_userbot_handlers(client: Client):
                     pkg = packages[idx]
                     price = pkg.get("price", talent["price"])
                     duration = pkg.get("duration", talent["duration"])
-                    # Build effective talent with package overrides
                     eff = dict(talent)
                     eff["price"] = price
                     eff["duration"] = duration
                     if pkg.get("video_index") is not None:
                         eff["_force_video_index"] = pkg["video_index"]
+                    await _clean_ub(c, chat_id, user_id)
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
                     asyncio.create_task(_send_qr_and_poll(c, user_id, chat_id, eff, price, duration))
                     return
                 else:
-                    await message.reply(f"❌ Pilih 1-{len(packages)}")
+                    reply = await message.reply(f"❌ Pilih 1-{len(packages)}")
+                    await _track_ub(user_id, message.id, reply.id)
                     return
             except ValueError:
-                await message.reply(f"Ketik nomor paket (1-{len(packages)}) atau 'batal'.")
+                reply = await message.reply(f"Ketik nomor paket (1-{len(packages)}) atau 'batal'.")
+                await _track_ub(user_id, message.id, reply.id)
                 return
 
         # --- No state: check triggers or talent name ---
 
         # Check sticker trigger
         if is_sticker:
+            await _clean_ub(c, chat_id, user_id)
             menu_text = await _build_menu_text(user_id)
-            await message.reply(menu_text)
+            reply = await message.reply(menu_text)
+            await _track_ub(user_id, message.id, reply.id)
             return
 
         if not text:
@@ -333,8 +406,10 @@ def register_userbot_handlers(client: Client):
         is_trigger = any(t in text_lower for t in triggers)
 
         if is_trigger:
+            await _clean_ub(c, chat_id, user_id)
             menu_text = await _build_menu_text(user_id)
-            await message.reply(menu_text)
+            reply = await message.reply(menu_text)
+            await _track_ub(user_id, message.id, reply.id)
             return
 
         # Try match talent name
@@ -342,7 +417,7 @@ def register_userbot_handlers(client: Client):
         online = [t for t in talents if not t.get("offline")]
 
         if not online:
-            return  # Don't reply if no talent available
+            return
 
         matched = _fuzzy_match_talent(text, online)
 
@@ -351,19 +426,27 @@ def register_userbot_handlers(client: Client):
             in_session = await db.get_session_by_talent(matched["id"])
             cooldown_at = await db.get_cooldown(matched["id"])
             if in_session or (cooldown_at and time.time() < cooldown_at):
-                await message.reply(f"❌ {matched['name']} sedang tidak tersedia. Coba lagi nanti.")
+                await _clean_ub(c, chat_id, user_id)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                await c.send_message(chat_id, f"❌ {matched['name']} sedang tidak tersedia. Coba lagi nanti.")
                 return
 
             # Show packages or confirm
+            await _clean_ub(c, chat_id, user_id)
             packages = matched.get("packages") or []
             if packages:
                 _ub_state[user_id] = {"step": "pick_package", "talent": matched}
                 pkg_text = await _build_package_text(matched, user_id)
-                await message.reply(pkg_text)
+                reply = await message.reply(pkg_text)
+                await _track_ub(user_id, message.id, reply.id)
             else:
                 _ub_state[user_id] = {"step": "confirm_order", "talent": matched}
                 confirm_text = await _build_package_text(matched, user_id)
-                await message.reply(confirm_text)
+                reply = await message.reply(confirm_text)
+                await _track_ub(user_id, message.id, reply.id)
             return
 
         # No match — don't reply (avoid noise for unrelated messages)
