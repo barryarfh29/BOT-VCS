@@ -361,7 +361,7 @@ def register_userbot_handlers(client: Client):
                 except Exception:
                     pass
                 # Kembali ke menu
-                menu_text = await _build_menu_text(user_id)
+                menu_text = await _build_menu_text(user_id, message.from_user.first_name if message.from_user else "")
                 reply = await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
                 await _track_ub(user_id, reply.id)
             # Ignore other messages during payment wait
@@ -387,7 +387,7 @@ def register_userbot_handlers(client: Client):
                     await message.delete()
                 except Exception:
                     pass
-                menu_text = await _build_menu_text(user_id)
+                menu_text = await _build_menu_text(user_id, message.from_user.first_name if message.from_user else "")
                 reply = await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
                 await _track_ub(user_id, reply.id)
                 return
@@ -404,7 +404,7 @@ def register_userbot_handlers(client: Client):
                     await message.delete()
                 except Exception:
                     pass
-                menu_text = await _build_menu_text(user_id)
+                menu_text = await _build_menu_text(user_id, message.from_user.first_name if message.from_user else "")
                 reply = await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
                 await _track_ub(user_id, reply.id)
                 return
@@ -442,7 +442,7 @@ def register_userbot_handlers(client: Client):
         # Check sticker trigger
         if is_sticker:
             await _clean_ub(c, chat_id, user_id)
-            menu_text = await _build_menu_text(user_id)
+            menu_text = await _build_menu_text(user_id, message.from_user.first_name if message.from_user else "")
             reply = await message.reply(menu_text, parse_mode=enums.ParseMode.MARKDOWN)
             await _track_ub(user_id, message.id, reply.id)
             return
@@ -510,7 +510,7 @@ def register_userbot_handlers(client: Client):
 
         if is_trigger:
             await _clean_ub(c, chat_id, user_id)
-            menu_text = await _build_menu_text(user_id)
+            menu_text = await _build_menu_text(user_id, message.from_user.first_name if message.from_user else "")
             reply = await message.reply(menu_text, parse_mode=enums.ParseMode.MARKDOWN)
             await _track_ub(user_id, message.id, reply.id)
             return
