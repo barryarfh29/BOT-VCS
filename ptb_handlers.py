@@ -1715,7 +1715,7 @@ async def start_fake_buyer_loop(bot):
                 settings = await db.get_settings()
                 fb_settings = settings.get("fake_buyer", {})
                 if not fb_settings.get("enabled", False):
-                    await asyncio.sleep(60)
+                    await asyncio.sleep(15)  # Check setiap 15 detik kalau belum aktif
                     continue
 
                 interval_min = fb_settings.get("interval_min", 5)
@@ -1724,67 +1724,75 @@ async def start_fake_buyer_loop(bot):
 
                 # Random interval
                 wait = random.randint(interval_min, interval_max) * 60
-                await asyncio.sleep(wait)
-
-                # Re-check enabled (mungkin dimatikan saat sleep)
-                settings = await db.get_settings()
-                fb_settings = settings.get("fake_buyer", {})
-                if not fb_settings.get("enabled", False):
-                    continue
-
-                # Pilih talent random yang online
-                talents = await db.get_talents()
-                online_talents = [t for t in talents if not t.get("offline")]
-                if not online_talents:
-                    continue
-
-                talent = random.choice(online_talents)
-                fake_user = _generate_fake_username()
-
-                # Template pesan (editable via web)
-                tpl = await db.get_template("fake_buyer")
-                if not tpl:
-                    tpl = "✅ {username} baru saja menyelesaikan sesi dengan <b>{talent_name}</b>"
-                msg_text = tpl.replace("{username}", fake_user).replace("{talent_name}", talent["name"])
-                msg_text = _strip_unsupported_html(msg_text)
-
-                # Kirim ke semua user (kecuali admin & user dalam session)
-                user_ids = await db.get_all_user_ids()
-                admin_ids = await db.get_admin_ids()
-                active_sessions = await db.get_active_sessions()
-                session_users = {s["user_id"] for s in active_sessions}
-
-                sent_messages = []  # [(chat_id, msg_id)]
-
-                for uid in user_ids:
-                    if uid in admin_ids or uid in session_users:
+                # Sleep dalam chunk 15 detik supaya bisa detect disable cepat
+                elapsed = 0
+                while elapsed < wait:
+                    await asyncio.sleep(15)
+                    elapsed += 15
+                    # Re-check kalau dimatikan saat menunggu
+                    s = await db.get_settings()
+                    if not s.get("fake_buyer", {}).get("enabled", False):
+                        break
+                else:
+                    # Waktu habis — kirim notifikasi
+                    # Pilih talent random yang online
+                    talents = await db.get_talents()
+                    online_talents = [t for t in talents if not t.get("offline")]
+                    if not online_talents:
                         continue
-                    try:
-                        msg = await bot.send_message(
-                            chat_id=uid,
-                            text=msg_text,
-                            parse_mode=ParseMode.HTML,
-                        )
-                        if msg:
-                            sent_messages.append((uid, msg.message_id))
-                    except Exception:
-                        pass
-                    await asyncio.sleep(0.05)
 
-                # Auto-delete setelah X menit
-                if delete_after > 0 and sent_messages:
-                    await asyncio.sleep(delete_after * 60)
-                    for chat_id, msg_id in sent_messages:
+                    talent = random.choice(online_talents)
+                    fake_user = _generate_fake_username()
+
+                    # Template pesan
+                    tpl = await db.get_template("fake_buyer")
+                    if not tpl:
+                        tpl = "✅ {username} baru saja menyelesaikan sesi dengan <b>{talent_name}</b>"
+                    msg_text = tpl.replace("{username}", fake_user).replace("{talent_name}", talent["name"])
+                    msg_text = _strip_unsupported_html(msg_text)
+
+                    # Kirim ke semua user (kecuali admin & user dalam session)
+                    user_ids = await db.get_all_user_ids()
+                    admin_ids = await db.get_admin_ids()
+                    active_sessions = await db.get_active_sessions()
+                    session_users = {s["user_id"] for s in active_sessions}
+
+                    sent_messages = []
+
+                    for uid in user_ids:
+                        if uid in admin_ids or uid in session_users:
+                            continue
                         try:
-                            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                            msg = await bot.send_message(
+                                chat_id=uid,
+                                text=msg_text,
+                                parse_mode=ParseMode.HTML,
+                            )
+                            if msg:
+                                sent_messages.append((uid, msg.message_id))
                         except Exception:
                             pass
+                        await asyncio.sleep(0.05)
+
+                    # Auto-delete setelah X menit
+                    if delete_after > 0 and sent_messages:
+                        await asyncio.sleep(delete_after * 60)
+                        for chat_id, msg_id in sent_messages:
+                            try:
+                                await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                            except Exception:
+                                pass
+
+                    logger.info(f"Fake buyer sent to {len(sent_messages)} users (talent: {talent['name']})")
+                    continue
+                # Kalau loop break (disabled), kembali ke awal
+                continue
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Fake buyer loop error: {e}")
-                await asyncio.sleep(60)
+                await asyncio.sleep(30)
 
     _fake_buyer_task = asyncio.create_task(_loop())
     return _fake_buyer_task
