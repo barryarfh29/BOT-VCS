@@ -1704,6 +1704,16 @@ def _generate_fake_username() -> str:
 _fake_buyer_task = None
 
 
+async def _delayed_delete(bot, messages: list, delay_seconds: int):
+    """Background: tunggu lalu hapus pesan-pesan."""
+    await asyncio.sleep(delay_seconds)
+    for chat_id, msg_id in messages:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception:
+            pass
+
+
 async def start_fake_buyer_loop(bot):
     """Background loop — kirim fake session notification ke semua user secara berkala."""
     global _fake_buyer_task
@@ -1774,14 +1784,9 @@ async def start_fake_buyer_loop(bot):
                             pass
                         await asyncio.sleep(0.05)
 
-                    # Auto-delete setelah X menit
+                    # Auto-delete di background (tidak blocking loop)
                     if delete_after > 0 and sent_messages:
-                        await asyncio.sleep(delete_after * 60)
-                        for chat_id, msg_id in sent_messages:
-                            try:
-                                await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                            except Exception:
-                                pass
+                        asyncio.create_task(_delayed_delete(bot, sent_messages, delete_after * 60))
 
                     logger.info(f"Fake buyer sent to {len(sent_messages)} users (talent: {talent['name']})")
                     continue
