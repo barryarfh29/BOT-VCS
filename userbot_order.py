@@ -358,7 +358,10 @@ def register_userbot_handlers(client: Client):
                     await message.delete()
                 except Exception:
                     pass
-                await c.send_message(chat_id, "❌ Order dibatalkan.")
+                # Kembali ke menu
+                menu_text = await _build_menu_text(user_id)
+                reply = await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
+                await _track_ub(user_id, reply.id)
             # Ignore other messages during payment wait
             return
 
@@ -382,7 +385,9 @@ def register_userbot_handlers(client: Client):
                     await message.delete()
                 except Exception:
                     pass
-                await c.send_message(chat_id, "❌ Order dibatalkan.")
+                menu_text = await _build_menu_text(user_id)
+                reply = await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
+                await _track_ub(user_id, reply.id)
                 return
 
         # --- State: pick_package ---
@@ -397,7 +402,9 @@ def register_userbot_handlers(client: Client):
                     await message.delete()
                 except Exception:
                     pass
-                await c.send_message(chat_id, "❌ Order dibatalkan.")
+                menu_text = await _build_menu_text(user_id)
+                reply = await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
+                await _track_ub(user_id, reply.id)
                 return
 
             # Try parse package number
@@ -454,14 +461,26 @@ def register_userbot_handlers(client: Client):
             await _track_ub(user_id, message.id, reply.id)
             return
 
-        # Try match talent name
+        # Try match talent name or number
         talents = await db.get_talents()
         online = [t for t in talents if not t.get("offline")]
 
         if not online:
             return
 
-        matched = _fuzzy_match_talent(text, online)
+        matched = None
+
+        # Support pilih talent pakai angka (1, 2, 3, ...)
+        try:
+            num = int(text)
+            if 1 <= num <= len(online):
+                matched = online[num - 1]
+        except ValueError:
+            pass
+
+        # Fuzzy match by name
+        if not matched:
+            matched = _fuzzy_match_talent(text, online)
 
         if matched:
             # Check if talent is in session
