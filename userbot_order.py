@@ -274,6 +274,7 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
         "price": price,
         "duration": duration,
         "chat_id": chat_id,
+        "payment_msg_ids": payment_msg_ids,
     }
 
     # Poll payment
@@ -358,6 +359,12 @@ def register_userbot_handlers(client: Client):
         # --- State: waiting_payment ---
         if state and state.get("step") == "waiting_payment":
             if text.lower() in ("batal", "cancel", "stop"):
+                # Hapus QR + invoice messages
+                for mid in state.get("payment_msg_ids", []):
+                    try:
+                        await c.delete_messages(chat_id, mid)
+                    except Exception:
+                        pass
                 _ub_state.pop(user_id, None)
                 await _clean_ub(c, chat_id, user_id)
                 try:
