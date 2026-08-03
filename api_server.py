@@ -89,7 +89,9 @@ TEMPLATE_DESCRIPTIONS = {
     "fake_buyer": {"desc": "Notifikasi fake buyer (social proof). Variabel: {username}, {talent_name}", "category": "bot_promo"},
     # Userbot — Order Flow
     "ub_menu": {"desc": "Menu talent (dikirim saat trigger). Variabel: {talent_list}", "category": "userbot_order"},
+    "ub_talent_item": {"desc": "Format per-baris talent di menu. Variabel: {num}, {name}, {price}, {label}", "category": "userbot_style"},
     "ub_package": {"desc": "Pilih paket. Variabel: {talent_name}, {package_list}, {package_count}", "category": "userbot_order"},
+    "ub_pkg_item": {"desc": "Format per-baris paket. Variabel: {num}, {label}, {price}", "category": "userbot_style"},
     "ub_confirm": {"desc": "Konfirmasi order (tanpa paket). Variabel: {talent_name}, {price}, {duration}", "category": "userbot_order"},
     "ub_invoice": {"desc": "Invoice setelah QR. Variabel: {talent_name}, {duration}, {nominal}", "category": "userbot_order"},
     "ub_paid": {"desc": "Pembayaran berhasil", "category": "userbot_order"},

@@ -11,6 +11,7 @@ from difflib import SequenceMatcher
 
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from pyrogram import enums
 
 import database as db
 
@@ -89,7 +90,7 @@ async def _get_triggers() -> list:
 
 
 async def _build_menu_text(user_id: int = None) -> str:
-    """Build talent menu text with prices."""
+    """Build talent menu text with prices, using item template for styling."""
     from ptb_handlers import format_price
 
     talents = await db.get_talents()
@@ -97,6 +98,11 @@ async def _build_menu_text(user_id: int = None) -> str:
 
     if not online:
         return "❌ Tidak ada talent yang tersedia saat ini."
+
+    # Get item template for per-line styling
+    item_tpl = await db.get_template("ub_talent_item")
+    if not item_tpl:
+        item_tpl = "`{num}. {name} — {price} ({label})`"
 
     # Build talent list
     talent_lines = []
@@ -107,19 +113,25 @@ async def _build_menu_text(user_id: int = None) -> str:
             cheapest = prices_sorted[0]
             price_str = await format_price(int(cheapest["price"]), user_id) if user_id else f"Rp {cheapest['price']:,}"
             lbl = (cheapest.get("label") or "").strip() or f"{cheapest.get('duration', 0)}m"
-            talent_lines.append(f"  {i}. {t['name']} — mulai {price_str} ({lbl})")
         else:
             price_str = await format_price(int(t["price"]), user_id) if user_id else f"Rp {t['price']:,}"
-            talent_lines.append(f"  {i}. {t['name']} — {price_str} / {t['duration']}m")
+            lbl = f"{t['duration']}m"
+
+        line = (item_tpl
+                .replace("{num}", str(i))
+                .replace("{name}", t["name"])
+                .replace("{price}", price_str)
+                .replace("{label}", lbl))
+        talent_lines.append(line)
 
     talent_list = "\n".join(talent_lines)
 
-    # Get template
+    # Get menu template
     tpl = await db.get_template("ub_menu")
     if tpl and "{talent_list}" in tpl:
         return tpl.replace("{talent_list}", talent_list)
 
-    return f"Halo kak, selamat datang 👋\n\n📝 DAFTAR TALENT:\n{talent_list}\n\n✏️ Ketik nama talent untuk order.\nContoh: Sharifah"
+    return f"Halo kak, selamat datang 👋\n\n📝 DAFTAR TALENT:\n\n{talent_list}\n\n✏️ Ketik nama talent untuk order.\nContoh: Sharifah"
 
 
 async def _build_package_text(talent: dict, user_id: int = None) -> str:
@@ -142,10 +154,18 @@ async def _build_package_text(talent: dict, user_id: int = None) -> str:
         )
 
     pkg_lines = []
+    pkg_item_tpl = await db.get_template("ub_pkg_item")
+    if not pkg_item_tpl:
+        pkg_item_tpl = "`{num}. {label} — {price}`"
+
     for i, p in enumerate(packages, 1):
         lbl = (p.get("label") or "").strip() or f"{p.get('duration', 0)} menit"
         price_str = await format_price(int(p["price"]), user_id) if user_id else f"Rp {p['price']:,}"
-        pkg_lines.append(f"  {i}. {lbl} — {price_str}")
+        line = (pkg_item_tpl
+                .replace("{num}", str(i))
+                .replace("{label}", lbl)
+                .replace("{price}", price_str))
+        pkg_lines.append(line)
 
     package_list = "\n".join(pkg_lines)
     package_count = str(len(packages))
@@ -208,16 +228,25 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
         qr_file.name = "qris.png"
         qr_msg = await client.send_photo(chat_id, photo=qr_file)
 
-    inv_msg = await client.send_message(
-        chat_id,
-        f"📱 **Invoice**\n\n"
-        f"Talent: {talent_name}\n"
-        f"Durasi: {duration} menit\n"
-        f"Total: **{nominal}**\n\n"
-        f"Scan QR di atas untuk bayar.\n"
-        f"Pembayaran otomatis terdeteksi.\n\n"
-        f"Ketik 'batal' untuk cancel."
-    )
+    # Get invoice template
+    inv_tpl = await db.get_template("ub_invoice")
+    if inv_tpl:
+        inv_text = (inv_tpl
+                    .replace("{talent_name}", talent_name)
+                    .replace("{duration}", str(duration))
+                    .replace("{nominal}", nominal))
+    else:
+        inv_text = (
+            f"📱 **Invoice**\n\n"
+            f"Talent: {talent_name}\n"
+            f"Durasi: {duration} menit\n"
+            f"Total: **{nominal}**\n\n"
+            f"Scan QR di atas untuk bayar.\n"
+            f"Pembayaran otomatis terdeteksi.\n\n"
+            f"Ketik 'batal' untuk cancel."
+        )
+
+    inv_msg = await client.send_message(chat_id, inv_text, parse_mode=enums.ParseMode.MARKDOWN)
 
     # Track payment messages for cleanup
     payment_msg_ids = [m.id for m in [qr_msg, inv_msg] if m]
@@ -267,7 +296,9 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
                     except Exception:
                         pass
 
-                confirm_msg = await client.send_message(chat_id, "✅ Pembayaran dikonfirmasi!\n⏳ Menghubungkan ke talent...")
+                paid_tpl = await db.get_template("ub_paid")
+                paid_text = paid_tpl or "✅ Pembayaran dikonfirmasi!\n⏳ Menghubungkan ke talent..."
+                confirm_msg = await client.send_message(chat_id, paid_text, parse_mode=enums.ParseMode.MARKDOWN)
                 await asyncio.sleep(2)
                 try:
                     await confirm_msg.delete()
@@ -403,7 +434,7 @@ def register_userbot_handlers(client: Client):
         if is_sticker:
             await _clean_ub(c, chat_id, user_id)
             menu_text = await _build_menu_text(user_id)
-            reply = await message.reply(menu_text)
+            reply = await message.reply(menu_text, parse_mode=enums.ParseMode.MARKDOWN)
             await _track_ub(user_id, message.id, reply.id)
             return
 
@@ -419,7 +450,7 @@ def register_userbot_handlers(client: Client):
         if is_trigger:
             await _clean_ub(c, chat_id, user_id)
             menu_text = await _build_menu_text(user_id)
-            reply = await message.reply(menu_text)
+            reply = await message.reply(menu_text, parse_mode=enums.ParseMode.MARKDOWN)
             await _track_ub(user_id, message.id, reply.id)
             return
 
@@ -451,12 +482,12 @@ def register_userbot_handlers(client: Client):
             if packages:
                 _ub_state[user_id] = {"step": "pick_package", "talent": matched}
                 pkg_text = await _build_package_text(matched, user_id)
-                reply = await message.reply(pkg_text)
+                reply = await message.reply(pkg_text, parse_mode=enums.ParseMode.MARKDOWN)
                 await _track_ub(user_id, message.id, reply.id)
             else:
                 _ub_state[user_id] = {"step": "confirm_order", "talent": matched}
                 confirm_text = await _build_package_text(matched, user_id)
-                reply = await message.reply(confirm_text)
+                reply = await message.reply(confirm_text, parse_mode=enums.ParseMode.MARKDOWN)
                 await _track_ub(user_id, message.id, reply.id)
             return
 
