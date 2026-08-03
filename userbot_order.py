@@ -131,6 +131,7 @@ async def _build_menu_text(user_id: int = None, first_name: str = "") -> str:
     if tpl and "{talent_list}" in tpl:
         result = tpl.replace("{talent_list}", talent_list)
         result = result.replace("{first_name}", first_name or "kak")
+        result = result.replace("{user_id}", str(user_id or ""))
         return result
 
     return f"Halo kak, selamat datang 👋\n\n📝 DAFTAR TALENT:\n\n{talent_list}\n\n✏️ Ketik nama talent untuk order.\nContoh: Sharifah"
