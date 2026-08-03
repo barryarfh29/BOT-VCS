@@ -448,39 +448,28 @@ def register_userbot_handlers(client: Client):
         if not text:
             return
 
-        # Check keyword triggers
-        triggers = await _get_triggers()
+        # Strip emoji for matching purposes
+        text_clean = re.sub(r'[^\w\s\-.]', '', text).strip()
         text_lower = text.lower()
 
-        is_trigger = any(t in text_lower for t in triggers)
-
-        if is_trigger:
-            await _clean_ub(c, chat_id, user_id)
-            menu_text = await _build_menu_text(user_id)
-            reply = await message.reply(menu_text, parse_mode=enums.ParseMode.MARKDOWN)
-            await _track_ub(user_id, message.id, reply.id)
-            return
-
-        # Try match talent name or number
+        # Try match talent name or number FIRST (priority over triggers)
         talents = await db.get_talents()
         online = [t for t in talents if not t.get("offline")]
 
-        if not online:
-            return
-
         matched = None
 
-        # Support pilih talent pakai angka (1, 2, 3, ...)
-        try:
-            num = int(text)
-            if 1 <= num <= len(online):
-                matched = online[num - 1]
-        except ValueError:
-            pass
+        if online:
+            # Support pilih talent pakai angka (1, 2, 3, ...)
+            try:
+                num = int(text_clean)
+                if 1 <= num <= len(online):
+                    matched = online[num - 1]
+            except ValueError:
+                pass
 
-        # Fuzzy match by name
-        if not matched:
-            matched = _fuzzy_match_talent(text, online)
+            # Fuzzy match by name (use cleaned text without emoji)
+            if not matched and text_clean:
+                matched = _fuzzy_match_talent(text_clean, online)
 
         if matched:
             # Check if talent is in session
@@ -492,7 +481,9 @@ def register_userbot_handlers(client: Client):
                     await message.delete()
                 except Exception:
                     pass
-                await c.send_message(chat_id, f"❌ {matched['name']} sedang tidak tersedia. Coba lagi nanti.")
+                ub_unavail_tpl = await db.get_template("ub_unavailable")
+                unavail_text = (ub_unavail_tpl or "❌ {talent_name} sedang tidak tersedia. Coba lagi nanti.").replace("{talent_name}", matched["name"])
+                await c.send_message(chat_id, unavail_text, parse_mode=enums.ParseMode.MARKDOWN)
                 return
 
             # Show packages or confirm
@@ -510,4 +501,16 @@ def register_userbot_handlers(client: Client):
                 await _track_ub(user_id, message.id, reply.id)
             return
 
-        # No match — don't reply (avoid noise for unrelated messages)
+        # No talent match — check keyword triggers
+        triggers = await _get_triggers()
+
+        is_trigger = any(t in text_lower for t in triggers)
+
+        if is_trigger:
+            await _clean_ub(c, chat_id, user_id)
+            menu_text = await _build_menu_text(user_id)
+            reply = await message.reply(menu_text, parse_mode=enums.ParseMode.MARKDOWN)
+            await _track_ub(user_id, message.id, reply.id)
+            return
+
+        # No match — don't reply
