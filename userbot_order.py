@@ -98,26 +98,28 @@ async def _build_menu_text(user_id: int = None) -> str:
     if not online:
         return "❌ Tidak ada talent yang tersedia saat ini."
 
-    lines = ["Halo kak, selamat datang 👋\n"]
-    lines.append("📝 DAFTAR TALENT:\n")
-
+    # Build talent list
+    talent_lines = []
     for i, t in enumerate(online, 1):
         packages = t.get("packages") or []
         if packages:
-            # Show cheapest and most expensive
             prices_sorted = sorted(packages, key=lambda p: p.get("price", 0))
             cheapest = prices_sorted[0]
             price_str = await format_price(int(cheapest["price"]), user_id) if user_id else f"Rp {cheapest['price']:,}"
             lbl = (cheapest.get("label") or "").strip() or f"{cheapest.get('duration', 0)}m"
-            lines.append(f"  {i}. {t['name']} — mulai {price_str} ({lbl})")
+            talent_lines.append(f"  {i}. {t['name']} — mulai {price_str} ({lbl})")
         else:
             price_str = await format_price(int(t["price"]), user_id) if user_id else f"Rp {t['price']:,}"
-            lines.append(f"  {i}. {t['name']} — {price_str} / {t['duration']}m")
+            talent_lines.append(f"  {i}. {t['name']} — {price_str} / {t['duration']}m")
 
-    lines.append("\n✏️ Ketik nama talent untuk order.")
-    lines.append("Contoh: Sharifah")
+    talent_list = "\n".join(talent_lines)
 
-    return "\n".join(lines)
+    # Get template
+    tpl = await db.get_template("ub_menu")
+    if tpl and "{talent_list}" in tpl:
+        return tpl.replace("{talent_list}", talent_list)
+
+    return f"Halo kak, selamat datang 👋\n\n📝 DAFTAR TALENT:\n{talent_list}\n\n✏️ Ketik nama talent untuk order.\nContoh: Sharifah"
 
 
 async def _build_package_text(talent: dict, user_id: int = None) -> str:
@@ -129,6 +131,9 @@ async def _build_package_text(talent: dict, user_id: int = None) -> str:
 
     if not packages:
         price_str = await format_price(int(talent["price"]), user_id) if user_id else f"Rp {talent['price']:,}"
+        tpl = await db.get_template("ub_confirm")
+        if tpl:
+            return tpl.replace("{talent_name}", name).replace("{price}", price_str).replace("{duration}", str(talent["duration"]))
         return (
             f"✅ {name}\n"
             f"Harga: {price_str}\n"
@@ -136,14 +141,20 @@ async def _build_package_text(talent: dict, user_id: int = None) -> str:
             f"Ketik 'ok' untuk lanjut bayar atau 'batal' untuk cancel."
         )
 
-    lines = [f"✅ {name}\n", "Pilih paket:\n"]
+    pkg_lines = []
     for i, p in enumerate(packages, 1):
         lbl = (p.get("label") or "").strip() or f"{p.get('duration', 0)} menit"
         price_str = await format_price(int(p["price"]), user_id) if user_id else f"Rp {p['price']:,}"
-        lines.append(f"  {i}. {lbl} — {price_str}")
+        pkg_lines.append(f"  {i}. {lbl} — {price_str}")
 
-    lines.append(f"\nKetik nomor paket (1-{len(packages)}) atau 'batal'.")
-    return "\n".join(lines)
+    package_list = "\n".join(pkg_lines)
+    package_count = str(len(packages))
+
+    tpl = await db.get_template("ub_package")
+    if tpl:
+        return tpl.replace("{talent_name}", name).replace("{package_list}", package_list).replace("{package_count}", package_count)
+
+    return f"✅ {name}\n\nPilih paket:\n{package_list}\n\nKetik nomor paket (1-{package_count}) atau 'batal'."
 
 
 async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: dict, price: int, duration):

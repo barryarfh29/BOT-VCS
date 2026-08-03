@@ -66,22 +66,36 @@ def _get_allowed_origins() -> set:
     return origins
 
 TEMPLATE_DESCRIPTIONS = {
-    "welcome": "Halaman pilih talent",
-    "loading_1": "Loading step 1 (awal)",
-    "loading_2": "Loading step 2 (talents found). Variabel: {count}",
-    "loading_3": "Loading step 3 (loading menu). Variabel: {count}",
-    "payment": "Invoice QRIS",
-    "paid": "Pembayaran diterima",
-    "connecting": "Menghubungi talent",
-    "session_ready": "Sesi siap",
-    "session_end": "Sesi berakhir",
-    "talent_full": "Talent full",
-    "talent_detail": "Detail talent (deskripsi via admin bot)",
-    "channel_greeting": "Sapaan di channel private (dikirim talent saat customer join)",
-    "join_warning": "Peringatan kalau customer belum naik ke video chat (5 menit)",
-    "promo_prompt": "Prompt input promo code sebelum bayar",
-    "promo_applied": "Konfirmasi promo berhasil. Variabel: {code}, {discount}",
-    "fake_buyer": "Notifikasi fake buyer (social proof). Variabel: {username}, {talent_name}",
+    # Bot — Customer Flow
+    "welcome": {"desc": "Halaman pilih talent", "category": "bot_customer"},
+    "talent_detail": {"desc": "Detail talent (deskripsi via admin bot)", "category": "bot_customer"},
+    "talent_full": {"desc": "Talent full/busy", "category": "bot_customer"},
+    # Bot — Loading
+    "loading_1": {"desc": "Loading step 1 (awal)", "category": "bot_loading"},
+    "loading_2": {"desc": "Loading step 2 (talents found). Variabel: {count}", "category": "bot_loading"},
+    "loading_3": {"desc": "Loading step 3 (loading menu). Variabel: {count}", "category": "bot_loading"},
+    # Bot — Pembayaran
+    "payment": {"desc": "Invoice QRIS", "category": "bot_payment"},
+    "paid": {"desc": "Pembayaran diterima", "category": "bot_payment"},
+    "connecting": {"desc": "Menghubungi talent", "category": "bot_payment"},
+    # Bot — Session
+    "session_ready": {"desc": "Sesi siap", "category": "bot_session"},
+    "session_end": {"desc": "Sesi berakhir", "category": "bot_session"},
+    "channel_greeting": {"desc": "Sapaan di channel private (dikirim talent saat customer join)", "category": "bot_session"},
+    "join_warning": {"desc": "Peringatan kalau customer belum naik ke video chat (5 menit)", "category": "bot_session"},
+    # Bot — Promo & Social
+    "promo_prompt": {"desc": "Prompt input promo code sebelum bayar", "category": "bot_promo"},
+    "promo_applied": {"desc": "Konfirmasi promo berhasil. Variabel: {code}, {discount}", "category": "bot_promo"},
+    "fake_buyer": {"desc": "Notifikasi fake buyer (social proof). Variabel: {username}, {talent_name}", "category": "bot_promo"},
+    # Userbot — Order Flow
+    "ub_menu": {"desc": "Menu talent (dikirim saat trigger). Variabel: {talent_list}", "category": "userbot_order"},
+    "ub_package": {"desc": "Pilih paket. Variabel: {talent_name}, {package_list}, {package_count}", "category": "userbot_order"},
+    "ub_confirm": {"desc": "Konfirmasi order (tanpa paket). Variabel: {talent_name}, {price}, {duration}", "category": "userbot_order"},
+    "ub_invoice": {"desc": "Invoice setelah QR. Variabel: {talent_name}, {duration}, {nominal}", "category": "userbot_order"},
+    "ub_paid": {"desc": "Pembayaran berhasil", "category": "userbot_order"},
+    "ub_cancelled": {"desc": "Order dibatalkan", "category": "userbot_order"},
+    "ub_unavailable": {"desc": "Talent tidak tersedia. Variabel: {talent_name}", "category": "userbot_order"},
+    "ub_expired": {"desc": "Invoice expired/cancelled. Variabel: {status}", "category": "userbot_order"},
 }
 
 
@@ -208,9 +222,14 @@ async def get_templates(request):
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     result = []
-    for key, desc in TEMPLATE_DESCRIPTIONS.items():
+    for key, info in TEMPLATE_DESCRIPTIONS.items():
         content = await db.get_template(key)
-        result.append({"key": key, "content": content, "description": desc})
+        result.append({
+            "key": key,
+            "content": content,
+            "description": info["desc"],
+            "category": info["category"],
+        })
     return web.json_response(result)
 
 
@@ -224,7 +243,8 @@ async def get_template(request):
         return web.json_response({"error": "Not found"}, status=404)
 
     content = await db.get_template(key)
-    return web.json_response({"key": key, "content": content, "description": TEMPLATE_DESCRIPTIONS[key]})
+    info = TEMPLATE_DESCRIPTIONS[key]
+    return web.json_response({"key": key, "content": content, "description": info["desc"], "category": info["category"]})
 
 
 async def update_template(request):
@@ -241,7 +261,8 @@ async def update_template(request):
     await db.set_template(key, content)
     await db.log_activity("template_updated", category="admin", details={"key": key, "via": "web"})
 
-    return web.json_response({"key": key, "content": content, "description": TEMPLATE_DESCRIPTIONS[key]})
+    info = TEMPLATE_DESCRIPTIONS[key]
+    return web.json_response({"key": key, "content": content, "description": info["desc"], "category": info["category"]})
 
 
 async def get_talent_detail(request):

@@ -328,6 +328,14 @@ DEFAULT_TEMPLATES = {
     "promo_prompt": "🎟 <b>Punya promo code?</b>\nKirim kode sekarang atau klik Skip.",
     "promo_applied": "✅ Promo <b>{code}</b> applied! Diskon: {discount}",
     "fake_buyer": "✅ {username} baru saja menyelesaikan sesi dengan <b>{talent_name}</b>",
+    "ub_menu": "Halo kak, selamat datang 👋\n\n📝 DAFTAR TALENT:\n{talent_list}\n\n✏️ Ketik nama talent untuk order.\nContoh: Sharifah",
+    "ub_package": "✅ {talent_name}\n\nPilih paket:\n{package_list}\n\nKetik nomor paket (1-{package_count}) atau 'batal'.",
+    "ub_confirm": "✅ {talent_name}\nHarga: {price}\nDurasi: {duration} menit\n\nKetik 'ok' untuk lanjut bayar atau 'batal' untuk cancel.",
+    "ub_invoice": "📱 **Invoice**\n\nTalent: {talent_name}\nDurasi: {duration} menit\nTotal: **{nominal}**\n\nScan QR di atas untuk bayar.\nPembayaran otomatis terdeteksi.\n\nKetik 'batal' untuk cancel.",
+    "ub_paid": "✅ Pembayaran dikonfirmasi!\n⏳ Menghubungkan ke talent...",
+    "ub_cancelled": "❌ Order dibatalkan.",
+    "ub_unavailable": "❌ {talent_name} sedang tidak tersedia. Coba lagi nanti.",
+    "ub_expired": "❌ Invoice {status}.",
 }
 
 
