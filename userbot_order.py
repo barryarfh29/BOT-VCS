@@ -89,7 +89,7 @@ async def _get_triggers() -> list:
     return DEFAULT_TRIGGERS
 
 
-async def _build_menu_text(user_id: int = None) -> str:
+async def _build_menu_text(user_id: int = None, first_name: str = "") -> str:
     """Build talent menu text with prices, using item template for styling."""
     from ptb_handlers import format_price
 
@@ -129,7 +129,9 @@ async def _build_menu_text(user_id: int = None) -> str:
     # Get menu template
     tpl = await db.get_template("ub_menu")
     if tpl and "{talent_list}" in tpl:
-        return tpl.replace("{talent_list}", talent_list)
+        result = tpl.replace("{talent_list}", talent_list)
+        result = result.replace("{first_name}", first_name or "kak")
+        return result
 
     return f"Halo kak, selamat datang 👋\n\n📝 DAFTAR TALENT:\n\n{talent_list}\n\n✏️ Ketik nama talent untuk order.\nContoh: Sharifah"
 
