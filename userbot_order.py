@@ -334,7 +334,7 @@ async def _send_qr_and_poll(client: Client, user_id: int, chat_id: int, talent: 
 def register_userbot_handlers(client: Client):
     """Register message handlers on the CS userbot client."""
 
-    @client.on_message(filters.private & filters.incoming & ~filters.me)
+    @client.on_message(filters.private & ~filters.channel)
     async def on_private_message(c: Client, message: Message):
         user_id = message.from_user.id if message.from_user else 0
         if not user_id:
@@ -348,6 +348,43 @@ def register_userbot_handlers(client: Client):
         chat_id = message.chat.id
         text = (message.text or message.caption or "").strip()
         is_sticker = bool(message.sticker)
+
+        # Pesan dari diri sendiri (userbot) — hanya handle /menu dan /order
+        me = await c.get_me()
+        is_self = (user_id == me.id)
+
+        if is_self:
+            if text.lower() == "/menu":
+                menu_text = await _build_menu_text(chat_id, "kak")
+                await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+            elif text.lower().startswith("/order "):
+                talent_name = text[7:].strip()
+                if talent_name:
+                    talents = await db.get_talents()
+                    online = [t for t in talents if not t.get("offline")]
+                    text_clean = re.sub(r'[^\w\s\-.]', '', talent_name).strip()
+                    matched = _fuzzy_match_talent(text_clean, online) if online else None
+                    if matched:
+                        packages = matched.get("packages") or []
+                        if packages:
+                            _ub_state[chat_id] = {"step": "pick_package", "talent": matched}
+                            pkg_text = await _build_package_text(matched, chat_id)
+                            await c.send_message(chat_id, pkg_text, parse_mode=enums.ParseMode.MARKDOWN)
+                        else:
+                            _ub_state[chat_id] = {"step": "confirm_order", "talent": matched}
+                            confirm_text = await _build_package_text(matched, chat_id)
+                            await c.send_message(chat_id, confirm_text, parse_mode=enums.ParseMode.MARKDOWN)
+                    else:
+                        await c.send_message(chat_id, f"❌ Talent '{talent_name}' tidak ditemukan.")
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
+            return  # Skip all other self-messages
 
         # Check if user is admin — handle admin commands, skip auto-reply for regular messages
         admin_ids = await db.get_admin_ids()
