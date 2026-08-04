@@ -401,13 +401,13 @@ def register_userbot_handlers(client: Client):
                 # Batal saat waiting_payment
                 if state and state.get("step") == "waiting_payment":
                     if text.lower() in ("batal", "cancel", "stop"):
+                        # Hanya hapus QR + invoice, jangan hapus chat lainnya
                         for mid in state.get("payment_msg_ids", []):
                             try:
                                 await c.delete_messages(chat_id, mid)
                             except Exception:
                                 pass
                         _ub_state.pop(chat_id, None)
-                        await _clean_ub(c, chat_id, chat_id)
                         try:
                             peer = await c.get_users(chat_id)
                             peer_name = peer.first_name or "kak"
@@ -525,14 +525,13 @@ def register_userbot_handlers(client: Client):
         # --- State: waiting_payment ---
         if state and state.get("step") == "waiting_payment":
             if text.lower() in ("batal", "cancel", "stop"):
-                # Hapus QR + invoice messages
+                # Hanya hapus QR + invoice, jangan hapus chat lainnya
                 for mid in state.get("payment_msg_ids", []):
                     try:
                         await c.delete_messages(chat_id, mid)
                     except Exception:
                         pass
                 _ub_state.pop(user_id, None)
-                await _clean_ub(c, chat_id, user_id)
                 try:
                     await message.delete()
                 except Exception:
