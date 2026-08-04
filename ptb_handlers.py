@@ -1011,7 +1011,10 @@ async def _poll_payment(context, user_id, invoice_id, chat_id, talent, msg_ids):
                             await context.bot.delete_message(chat_id, mid)
                         except Exception:
                             pass
-                await context.bot.send_message(chat_id, f"Invoice {status.lower()}.")
+                try:
+                    await context.bot.send_message(chat_id, f"Invoice {status.lower()}.")
+                except Exception:
+                    pass
                 return
     except asyncio.CancelledError:
         pass
