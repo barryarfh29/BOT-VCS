@@ -381,12 +381,12 @@ async def end_session(session: dict):
     # Remove session from DB
     await db.remove_session(session.get("invoice_id"))
 
-    # Set cooldown if talent has one
+    # Set cooldown per user (hanya user ini yang kena cooldown, bukan global)
     if talent_id:
         talent = await db.get_talent(talent_id)
         cd = _parse_cooldown(talent.get("cooldown", 0)) if talent else 0
         if cd > 0:
-            await db.set_cooldown(talent_id, time.time() + cd * 60)
+            await db.set_cooldown(talent_id, time.time() + cd * 60, user_id=session.get("user_id"))
 
     # Hapus pesan "Pembayaran berhasil + link"
     success_msg_id = session.get("success_msg_id")

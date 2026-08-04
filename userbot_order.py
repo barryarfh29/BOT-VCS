@@ -349,9 +349,48 @@ def register_userbot_handlers(client: Client):
         text = (message.text or message.caption or "").strip()
         is_sticker = bool(message.sticker)
 
-        # Check if user is admin — skip auto-reply for admins
+        # Check if user is admin — handle admin commands, skip auto-reply for regular messages
         admin_ids = await db.get_admin_ids()
         if user_id in admin_ids:
+            # Admin commands: /menu dan /order untuk bantu customer
+            if text.lower() == "/menu":
+                # Kirim menu ke chat ini (customer yang sedang chat dengan admin)
+                peer_id = chat_id  # Di private chat, chat_id = peer user
+                menu_text = await _build_menu_text(peer_id, "kak")
+                await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                return
+            elif text.lower().startswith("/order "):
+                # /order <nama talent> — langsung mulai order untuk customer ini
+                talent_name = text[7:].strip()
+                if not talent_name:
+                    return
+                talents = await db.get_talents()
+                online = [t for t in talents if not t.get("offline")]
+                text_clean = re.sub(r'[^\w\s\-.]', '', talent_name).strip()
+                matched = _fuzzy_match_talent(text_clean, online) if online else None
+                if matched:
+                    packages = matched.get("packages") or []
+                    if packages:
+                        # Set state untuk customer di chat ini
+                        _ub_state[chat_id] = {"step": "pick_package", "talent": matched}
+                        pkg_text = await _build_package_text(matched, chat_id)
+                        await c.send_message(chat_id, pkg_text, parse_mode=enums.ParseMode.MARKDOWN)
+                    else:
+                        _ub_state[chat_id] = {"step": "confirm_order", "talent": matched}
+                        confirm_text = await _build_package_text(matched, chat_id)
+                        await c.send_message(chat_id, confirm_text, parse_mode=enums.ParseMode.MARKDOWN)
+                else:
+                    await c.send_message(chat_id, f"❌ Talent '{talent_name}' tidak ditemukan.")
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                return
+            # Regular admin message — skip auto-reply
             return
 
         state = _ub_state.get(user_id)
@@ -485,10 +524,12 @@ def register_userbot_handlers(client: Client):
                 matched = _fuzzy_match_talent(text_clean, online)
 
         if matched:
-            # Check if talent is in session
+            # Check if talent is in session or on cooldown (per user)
             in_session = await db.get_session_by_talent(matched["id"])
-            cooldown_at = await db.get_cooldown(matched["id"])
-            if in_session or (cooldown_at and time.time() < cooldown_at):
+            cooldown_at = await db.get_cooldown(matched["id"], user_id=user_id)
+            talent_cd_setting = matched.get("cooldown", 0)
+            is_on_cooldown = cooldown_at and time.time() < cooldown_at and talent_cd_setting > 0
+            if in_session or is_on_cooldown:
                 await _clean_ub(c, chat_id, user_id)
                 try:
                     await message.delete()

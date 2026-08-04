@@ -209,21 +209,27 @@ async def get_transactions(limit=10):
 # COOLDOWNS
 # ============================================================
 
-async def set_cooldown(talent_id: str, available_at: float):
+async def set_cooldown(talent_id: str, available_at: float, user_id: int = None):
+    """Set cooldown per user per talent."""
     await cooldowns_col.update_one(
-        {"talent_id": talent_id},
-        {"$set": {"talent_id": talent_id, "available_at": available_at}},
+        {"talent_id": talent_id, "user_id": user_id},
+        {"$set": {"talent_id": talent_id, "user_id": user_id, "available_at": available_at}},
         upsert=True
     )
 
 
-async def get_cooldown(talent_id: str):
-    doc = await cooldowns_col.find_one({"talent_id": talent_id})
+async def get_cooldown(talent_id: str, user_id: int = None):
+    """Get cooldown for specific user+talent. Returns 0 if no cooldown."""
+    doc = await cooldowns_col.find_one({"talent_id": talent_id, "user_id": user_id})
     return doc.get("available_at", 0) if doc else 0
 
 
-async def remove_cooldown(talent_id: str):
-    await cooldowns_col.delete_one({"talent_id": talent_id})
+async def remove_cooldown(talent_id: str, user_id: int = None):
+    """Remove cooldown. If user_id=None, remove all cooldowns for talent."""
+    if user_id is None:
+        await cooldowns_col.delete_many({"talent_id": talent_id})
+    else:
+        await cooldowns_col.delete_one({"talent_id": talent_id, "user_id": user_id})
 
 
 # ============================================================

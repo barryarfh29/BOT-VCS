@@ -108,7 +108,7 @@ async def _send_talent_menu(chat_id: int, user_id: int, context):
     for t in talents:
         tid = t["id"]
         in_session = await db.get_session_by_talent(tid)
-        cooldown_at = await db.get_cooldown(tid)
+        cooldown_at = await db.get_cooldown(tid, user_id=user_id)
         is_off = t.get("offline", False)
         if is_off or in_session or (cooldown_at and time.time() < cooldown_at):
             btns.append(InlineKeyboardButton(f"{t['name']} — FULL", callback_data=f"full_{tid}"))
@@ -243,7 +243,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for t in talents:
             tid = t["id"]
             in_session = await db.get_session_by_talent(tid)
-            cooldown_at = await db.get_cooldown(tid)
+            cooldown_at = await db.get_cooldown(tid, user_id=user_id)
             is_off = t.get("offline", False)
             if is_off or in_session or (cooldown_at and time.time() < cooldown_at):
                 btns.append(InlineKeyboardButton(f"{t['name']} — FULL", callback_data=f"full_{tid}"))
@@ -724,6 +724,7 @@ async def _handle_back_menu(update, context):
     """Back to talent selection."""
     query = update.callback_query
     chat_id = query.message.chat_id
+    uid = query.from_user.id
 
     # Delete current + clean all UI
     try:
@@ -736,7 +737,7 @@ async def _handle_back_menu(update, context):
     for t in talents:
         tid = t["id"]
         in_session = await db.get_session_by_talent(tid)
-        cooldown_at = await db.get_cooldown(tid)
+        cooldown_at = await db.get_cooldown(tid, user_id=uid)
         is_off = t.get("offline", False)
         if is_off or in_session or (cooldown_at and time.time() < cooldown_at):
             btns.append(InlineKeyboardButton(f"{t['name']} — FULL", callback_data=f"full_{tid}"))
