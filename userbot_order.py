@@ -416,10 +416,11 @@ def register_userbot_handlers(client: Client):
                         menu_text = await _build_menu_text(chat_id, peer_name)
                         reply = await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
                         await _track_ub(chat_id, reply.id)
-                    try:
-                        await message.delete()
-                    except Exception:
-                        pass
+                        try:
+                            await message.delete()
+                        except Exception:
+                            pass
+                    # Kalau bukan "batal" — biarkan (admin bisa chat bebas)
 
                 elif state and state.get("step") == "pick_package":
                     talent = state["talent"]
