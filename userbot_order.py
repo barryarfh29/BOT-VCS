@@ -425,6 +425,7 @@ def register_userbot_handlers(client: Client):
                 elif state and state.get("step") == "pick_package":
                     talent = state["talent"]
                     packages = talent.get("packages") or []
+                    handled = False
                     if text.lower() in ("batal", "cancel"):
                         _ub_state.pop(chat_id, None)
                         await _clean_ub(c, chat_id, chat_id)
@@ -436,6 +437,7 @@ def register_userbot_handlers(client: Client):
                         menu_text = await _build_menu_text(chat_id, peer_name)
                         reply = await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
                         await _track_ub(chat_id, reply.id)
+                        handled = True
                     else:
                         try:
                             idx = int(text) - 1
@@ -448,17 +450,21 @@ def register_userbot_handlers(client: Client):
                                 if pkg.get("video_index") is not None:
                                     eff["_force_video_index"] = pkg["video_index"]
                                 asyncio.create_task(_send_qr_and_poll(c, chat_id, chat_id, eff, eff["price"], eff["duration"]))
+                                handled = True
                         except (ValueError, TypeError):
                             pass
-                    try:
-                        await message.delete()
-                    except Exception:
-                        pass
+                    if handled:
+                        try:
+                            await message.delete()
+                        except Exception:
+                            pass
                 elif state and state.get("step") == "confirm_order":
+                    handled = False
                     if text.lower() in ("ok", "yes", "ya", "lanjut", "bayar"):
                         await _clean_ub(c, chat_id, chat_id)
                         talent = state["talent"]
                         asyncio.create_task(_send_qr_and_poll(c, chat_id, chat_id, talent, talent["price"], talent["duration"]))
+                        handled = True
                     elif text.lower() in ("batal", "cancel"):
                         _ub_state.pop(chat_id, None)
                         await _clean_ub(c, chat_id, chat_id)
@@ -470,10 +476,12 @@ def register_userbot_handlers(client: Client):
                         menu_text = await _build_menu_text(chat_id, peer_name)
                         reply = await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
                         await _track_ub(chat_id, reply.id)
-                    try:
-                        await message.delete()
-                    except Exception:
-                        pass
+                        handled = True
+                    if handled:
+                        try:
+                            await message.delete()
+                        except Exception:
+                            pass
             return  # Skip all other self-messages
 
         # Check if user is admin — handle admin commands, skip auto-reply for regular messages
