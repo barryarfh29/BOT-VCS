@@ -355,7 +355,13 @@ def register_userbot_handlers(client: Client):
 
         if is_self:
             if text.lower() == "/menu":
-                menu_text = await _build_menu_text(chat_id, "kak")
+                # Ambil info lawan chat (customer)
+                try:
+                    peer = await c.get_users(chat_id)
+                    peer_name = peer.first_name or "kak"
+                except Exception:
+                    peer_name = "kak"
+                menu_text = await _build_menu_text(chat_id, peer_name)
                 await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
                 try:
                     await message.delete()
@@ -380,6 +386,55 @@ def register_userbot_handlers(client: Client):
                             await c.send_message(chat_id, confirm_text, parse_mode=enums.ParseMode.MARKDOWN)
                     else:
                         await c.send_message(chat_id, f"❌ Talent '{talent_name}' tidak ditemukan.")
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
+            else:
+                # Self-message: handle angka (pick paket), "ok", "batal" — sama kayak customer
+                state = _ub_state.get(chat_id)
+                if state and state.get("step") == "pick_package":
+                    talent = state["talent"]
+                    packages = talent.get("packages") or []
+                    if text.lower() in ("batal", "cancel"):
+                        _ub_state.pop(chat_id, None)
+                        try:
+                            peer = await c.get_users(chat_id)
+                            peer_name = peer.first_name or "kak"
+                        except Exception:
+                            peer_name = "kak"
+                        menu_text = await _build_menu_text(chat_id, peer_name)
+                        await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
+                    else:
+                        try:
+                            idx = int(text) - 1
+                            if 0 <= idx < len(packages):
+                                pkg = packages[idx]
+                                eff = dict(talent)
+                                eff["price"] = pkg.get("price", talent["price"])
+                                eff["duration"] = pkg.get("duration", talent["duration"])
+                                if pkg.get("video_index") is not None:
+                                    eff["_force_video_index"] = pkg["video_index"]
+                                asyncio.create_task(_send_qr_and_poll(c, chat_id, chat_id, eff, eff["price"], eff["duration"]))
+                        except (ValueError, TypeError):
+                            pass
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
+                elif state and state.get("step") == "confirm_order":
+                    if text.lower() in ("ok", "yes", "ya", "lanjut", "bayar"):
+                        talent = state["talent"]
+                        asyncio.create_task(_send_qr_and_poll(c, chat_id, chat_id, talent, talent["price"], talent["duration"]))
+                    elif text.lower() in ("batal", "cancel"):
+                        _ub_state.pop(chat_id, None)
+                        try:
+                            peer = await c.get_users(chat_id)
+                            peer_name = peer.first_name or "kak"
+                        except Exception:
+                            peer_name = "kak"
+                        menu_text = await _build_menu_text(chat_id, peer_name)
+                        await c.send_message(chat_id, menu_text, parse_mode=enums.ParseMode.MARKDOWN)
                     try:
                         await message.delete()
                     except Exception:
